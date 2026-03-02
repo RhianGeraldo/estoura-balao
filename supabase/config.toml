@@ -1,0 +1,4 @@
+project_id = "ukcszhxfznyhdpjgwaug"
+
+[functions.balloon-api]
+verify_jwt = false
