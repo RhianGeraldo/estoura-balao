@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { createAction, getActiveAction, closeAction, getUnidades, createUnidade, deleteUnidade, getVendedoresStats, getActions, reopenAction, getUsers, createUser, deleteUser, type ActionPayload } from "@/lib/api";
+import { createAction, getActiveAction, closeAction, getUnidades, createUnidade, deleteUnidade, getVendedoresStats, getActions, reopenAction, getUsers, createUser, deleteUser, changePassword, type ActionPayload } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -458,7 +458,11 @@ function PoppedHistory({ actionId }: { actionId: string }) {
 function UsersTab() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [currentPw, setCurrentPw] = useState("");
+  const [newPw, setNewPw] = useState("");
+  const [confirmPw, setConfirmPw] = useState("");
   const queryClient = useQueryClient();
+  const loggedUser = localStorage.getItem("adminUser") || "";
 
   const { data, isLoading } = useQuery({
     queryKey: ["users"],
@@ -484,6 +488,23 @@ function UsersTab() {
     },
     onError: (err: Error) => toast.error(err.message),
   });
+
+  const changePwMutation = useMutation({
+    mutationFn: () => changePassword(currentPw, newPw),
+    onSuccess: (data) => {
+      toast.success(data.message);
+      setCurrentPw("");
+      setNewPw("");
+      setConfirmPw("");
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const handleChangePassword = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newPw !== confirmPw) return toast.error("As senhas não coincidem.");
+    changePwMutation.mutate();
+  };
 
   return (
     <div className="space-y-6">
@@ -520,12 +541,12 @@ function UsersTab() {
 
               <form onSubmit={(e) => { e.preventDefault(); createMutation.mutate(); }} className="flex flex-col sm:flex-row gap-4 items-end bg-muted/50 p-4 rounded-lg border border-border">
                 <div className="flex-1 space-y-2 w-full">
-                  <Label htmlFor="newUsername">Novo Usuário</Label>
-                  <Input id="newUsername" value={username} onChange={(e) => setUsername(e.target.value)} required />
+                  <Label htmlFor="newUsername">E-mail / Usuário</Label>
+                  <Input id="newUsername" type="email" placeholder="admin@email.com" value={username} onChange={(e) => setUsername(e.target.value)} required />
                 </div>
                 <div className="flex-1 space-y-2 w-full">
                   <Label htmlFor="newPassword">Senha</Label>
-                  <Input id="newPassword" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+                  <Input id="newPassword" type="password" placeholder="Mínimo 6 caracteres" value={password} onChange={(e) => setPassword(e.target.value)} required />
                 </div>
                 <Button type="submit" className="w-full sm:w-auto" disabled={createMutation.isPending}>
                   <Plus className="h-4 w-4 mr-1" /> Adicionar
@@ -533,6 +554,32 @@ function UsersTab() {
               </form>
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="font-display">Alterar Minha Senha</CardTitle>
+          <CardDescription>Você está logado como <strong>{loggedUser}</strong></CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleChangePassword} className="space-y-4 max-w-sm">
+            <div className="space-y-2">
+              <Label htmlFor="currentPw">Senha Atual</Label>
+              <Input id="currentPw" type="password" value={currentPw} onChange={(e) => setCurrentPw(e.target.value)} required />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="newPw">Nova Senha</Label>
+              <Input id="newPw" type="password" placeholder="Mínimo 6 caracteres" value={newPw} onChange={(e) => setNewPw(e.target.value)} required />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="confirmPw">Confirmar Nova Senha</Label>
+              <Input id="confirmPw" type="password" value={confirmPw} onChange={(e) => setConfirmPw(e.target.value)} required />
+            </div>
+            <Button type="submit" disabled={changePwMutation.isPending}>
+              Alterar Senha
+            </Button>
+          </form>
         </CardContent>
       </Card>
     </div>

@@ -47,7 +47,7 @@ export interface Unidade {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function fetchApi(path: string, method: "GET" | "POST" | "DELETE" = "GET", body?: any) {
+async function fetchApi(path: string, method: "GET" | "POST" | "DELETE" | "PUT" = "GET", body?: any) {
   const baseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:3000";
   const url = `${baseUrl}/api/${path}`;
   const headers: Record<string, string> = {
@@ -140,4 +140,8 @@ export async function createUser(username: string, password: string) {
 
 export async function deleteUser(id: string) {
   return fetchApi(`users/${id}`, "DELETE");
+}
+
+export async function changePassword(currentPassword: string, newPassword: string) {
+  return fetchApi("users/me/password", "PUT", { currentPassword, newPassword });
 }

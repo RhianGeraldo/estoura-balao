@@ -534,6 +534,35 @@ app.delete('/api/users/:id', authMiddleware, async (req, res) => {
     }
 });
 
+app.put('/api/users/me/password', authMiddleware, async (req, res) => {
+    try {
+        const { currentPassword, newPassword } = req.body;
+        if (!currentPassword || !newPassword) {
+            return res.status(400).json({ error: "Informe a senha atual e a nova senha." });
+        }
+        if (newPassword.length < 6) {
+            return res.status(400).json({ error: "A nova senha deve ter no mínimo 6 caracteres." });
+        }
+
+        // Get user from token
+        const token = req.headers.authorization?.split(' ')[1];
+        const decoded = jwt.verify(token, JWT_SECRET);
+        const user = await db.get("SELECT * FROM users WHERE id = ?", [decoded.id]);
+        if (!user) return res.status(404).json({ error: "Usuário não encontrado." });
+
+        const isMatch = await bcrypt.compare(currentPassword, user.password_hash);
+        if (!isMatch) return res.status(401).json({ error: "Senha atual incorreta." });
+
+        const hash = await bcrypt.hash(newPassword, 10);
+        await db.run("UPDATE users SET password_hash = ? WHERE id = ?", [hash, user.id]);
+
+        res.json({ success: true, message: "Senha alterada com sucesso!" });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 setupDatabase().then(() => {
     // Serve static files from the React app build
     import('path').then(({ default: path }) => {
