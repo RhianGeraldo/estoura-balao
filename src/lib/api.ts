@@ -1,6 +1,4 @@
-import { supabase } from "@/integrations/supabase/client";
-
-const FUNCTION_NAME = "balloon-api";
+// API client for local Express server
 
 export interface ActionPayload {
   nome: string;
@@ -44,18 +42,26 @@ export interface Balloon {
 export interface Unidade {
   id: string;
   nome: string;
+  token: string;
   created_at: string;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function fetchApi(path: string, method: "GET" | "POST" = "GET", body?: any) {
-  const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${FUNCTION_NAME}/${path}`;
+async function fetchApi(path: string, method: "GET" | "POST" | "DELETE" = "GET", body?: any) {
+  const baseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:3000";
+  const url = `${baseUrl}/api/${path}`;
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+
+  const token = localStorage.getItem("adminToken");
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
   const res = await fetch(url, {
     method,
-    headers: {
-      "Content-Type": "application/json",
-      "apikey": import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-    },
+    headers,
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
 
@@ -85,17 +91,7 @@ export async function createUnidade(nome: string, token: string): Promise<{ unid
 }
 
 export async function deleteUnidade(id: string) {
-  const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${FUNCTION_NAME}/unidades?id=${id}`;
-  const res = await fetch(url, {
-    method: "DELETE",
-    headers: {
-      "Content-Type": "application/json",
-      "apikey": import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-    },
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || "API error");
-  return data;
+  return fetchApi(`unidades?id=${id}`, "DELETE");
 }
 
 export async function validateBudget(codOrcamento: string, unidadeId: string): Promise<{
@@ -108,10 +104,40 @@ export async function validateBudget(codOrcamento: string, unidadeId: string): P
   return fetchApi("validate-budget", "POST", { cod_orcamento: codOrcamento, unidade_id: unidadeId });
 }
 
-export async function popBalloon(balloonId: string, codOrcamento?: string) {
-  return fetchApi("pop-balloon", "POST", { balloon_id: balloonId, cod_orcamento: codOrcamento });
+export async function popBalloon(balloonId: string, codOrcamento?: string, vendedor?: string, cliente?: string) {
+  return fetchApi("pop-balloon", "POST", { balloon_id: balloonId, cod_orcamento: codOrcamento, vendedor, cliente });
+}
+
+export async function getVendedoresStats(actionId: string): Promise<{ history: { vendedor: string, cliente: string, cod_orcamento: string, valor: number, premiado: boolean, data_estouro: string }[] }> {
+  return fetchApi(`vendedores-stats?action_id=${actionId}`, "GET");
 }
 
 export async function closeAction(actionId: string) {
   return fetchApi("close-action", "POST", { action_id: actionId });
+}
+
+export async function getActions(): Promise<{ actions: (Action & { estourados: number })[] }> {
+  return fetchApi("actions", "GET");
+}
+
+export async function reopenAction(actionId: string) {
+  return fetchApi("reopen-action", "POST", { action_id: actionId });
+}
+
+// --- AUTH ---
+
+export async function login(username: string, password: string): Promise<{ token: string, username: string }> {
+  return fetchApi("login", "POST", { username, password });
+}
+
+export async function getUsers(): Promise<{ users: { id: string, username: string, created_at: string }[] }> {
+  return fetchApi("users", "GET");
+}
+
+export async function createUser(username: string, password: string) {
+  return fetchApi("users", "POST", { username, password });
+}
+
+export async function deleteUser(id: string) {
+  return fetchApi(`users/${id}`, "DELETE");
 }

@@ -20,12 +20,14 @@ interface BalloonItemProps {
 }
 
 export default function BalloonItem({ balloon, index, onPop, isPopping }: BalloonItemProps) {
-  const color = BALLOON_COLORS[index % BALLOON_COLORS.length];
+  // Use a simple hash of the UUID to pick a consistent pseudo-random color
+  const hash = balloon.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  const color = BALLOON_COLORS[hash % BALLOON_COLORS.length];
 
   if (balloon.estourado) {
     return (
       <motion.div
-        className="flex flex-col items-center justify-center aspect-square rounded-2xl bg-muted/50 border border-border p-2"
+        className="flex flex-col items-center justify-center aspect-square w-20 sm:w-24 shrink-0 rounded-2xl bg-muted/50 border border-border p-2"
         initial={{ scale: 0.8 }}
         animate={{ scale: 1 }}
       >
@@ -45,7 +47,7 @@ export default function BalloonItem({ balloon, index, onPop, isPopping }: Balloo
     <motion.button
       onClick={onPop}
       disabled={isPopping}
-      className={`relative aspect-square rounded-full ${color} cursor-pointer shadow-lg hover:shadow-xl transition-shadow flex items-center justify-center group disabled:opacity-60`}
+      className={`relative aspect-square w-20 sm:w-24 shrink-0 rounded-full ${color} cursor-pointer shadow-lg hover:shadow-xl transition-shadow flex items-center justify-center group disabled:opacity-60`}
       whileHover={{ scale: 1.1, y: -4 }}
       whileTap={{ scale: 0.9 }}
       animate={{ y: [0, -6, 0] }}

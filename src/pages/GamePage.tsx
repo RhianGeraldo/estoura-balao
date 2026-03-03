@@ -7,7 +7,9 @@ import BalloonItem from "@/components/BalloonItem";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { toast } from "sonner";
+import confetti from "canvas-confetti";
 
 interface BudgetValidation {
   approved: boolean;
@@ -22,10 +24,12 @@ export default function GamePage() {
   const [selectedUnidade, setSelectedUnidade] = useState("");
   const [codOrcamento, setCodOrcamento] = useState("");
   const [budgetValidation, setBudgetValidation] = useState<BudgetValidation | null>(null);
-  const [poppedResult, setPoppedResult] = useState<{ show: boolean; premiado: boolean; valor: number }>({
+  const [poppedResult, setPoppedResult] = useState<{ show: boolean; premiado: boolean; valor: number; codOrcamento: number | null; vendedor: string | null }>({
     show: false,
     premiado: false,
     valor: 0,
+    codOrcamento: null,
+    vendedor: null,
   });
 
   const { data: actionData, isLoading: actionLoading } = useQuery({
@@ -63,14 +67,26 @@ export default function GamePage() {
   });
 
   const popMutation = useMutation({
-    mutationFn: (id: string) => popBalloon(id, codOrcamento),
+    mutationFn: (id: string) => popBalloon(id, codOrcamento, budgetValidation?.vendedor, budgetValidation?.cliente),
     onSuccess: (data) => {
       const b = data.balloon;
-      setPoppedResult({ show: true, premiado: b.premiado, valor: Number(b.valor) });
+      if (b.premiado) {
+        confetti({
+          particleCount: 150,
+          spread: 70,
+          origin: { y: 0.6 }
+        });
+      }
+      setPoppedResult({ show: true, premiado: b.premiado, valor: Number(b.valor), codOrcamento: budgetValidation?.codOrcamento || null, vendedor: budgetValidation?.vendedor || null });
       queryClient.invalidateQueries({ queryKey: ["balloons", actionId] });
-      setTimeout(() => setPoppedResult((p) => ({ ...p, show: false })), 3000);
+      setTimeout(() => {
+        setPoppedResult((p) => {
+          if (p.show) handleReset();
+          return { ...p, show: false };
+        });
+      }, 10000);
     },
-    onError: () => {
+    onError: (err: Error) => {
       queryClient.invalidateQueries({ queryKey: ["balloons", actionId] });
     },
   });
@@ -113,73 +129,103 @@ export default function GamePage() {
 
   return (
     <div className="min-h-screen bg-background relative overflow-hidden">
-      <header className="border-b border-border bg-card px-6 py-4">
+      <header className="border-b border-border bg-card px-4 sm:px-6 py-4">
         <div className="mx-auto max-w-6xl text-center">
-          <h1 className="font-display text-3xl font-bold text-foreground">
+          <h1 className="font-display text-2xl sm:text-3xl font-bold text-foreground">
             🎈 {actionData.action.nome}
           </h1>
           <p className="text-muted-foreground mt-1">Selecione a unidade e informe o código do orçamento</p>
         </div>
       </header>
 
-      <div className="mx-auto max-w-xl px-6 pt-6">
-        {!canPop ? (
-          <form onSubmit={handleValidate} className="space-y-3">
-            <Select value={selectedUnidade} onValueChange={setSelectedUnidade}>
-              <SelectTrigger>
-                <SelectValue placeholder="Selecione a unidade" />
-              </SelectTrigger>
-              <SelectContent>
-                {unidades.map((u) => (
-                  <SelectItem key={u.id} value={u.id}>{u.nome}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <div className="flex gap-2">
-              <Input
-                placeholder="Código do Orçamento"
-                value={codOrcamento}
-                onChange={(e) => setCodOrcamento(e.target.value)}
-                className="text-center text-lg font-display"
-                disabled={validateMutation.isPending}
-              />
-              <Button type="submit" disabled={validateMutation.isPending || !codOrcamento.trim() || !selectedUnidade}>
-                {validateMutation.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Search className="h-4 w-4" />
-                )}
-                <span className="ml-2">Validar</span>
-              </Button>
+      <Dialog open={!canPop}>
+        <DialogContent className="w-[95vw] sm:max-w-md rounded-xl md:w-full [&>button]:hidden" onInteractOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
+          <DialogHeader>
+            <DialogTitle className="font-display flex items-center gap-2 text-2xl">
+              <PartyPopper className="h-6 w-6 text-primary" />
+              Validar Orçamento
+            </DialogTitle>
+            <DialogDescription>
+              Acesso bloqueado. Informe a unidade e o código do orçamento aprovado para participar do Estoura Balão.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleValidate} className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Unidade</label>
+              <Select value={selectedUnidade} onValueChange={setSelectedUnidade}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione a unidade" />
+                </SelectTrigger>
+                <SelectContent>
+                  {unidades.map((u) => (
+                    <SelectItem key={u.id} value={u.id}>{u.nome}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Código do Orçamento</label>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <Input
+                  placeholder="Ex: 123456"
+                  value={codOrcamento}
+                  onChange={(e) => setCodOrcamento(e.target.value)}
+                  className="text-lg font-display w-full"
+                  disabled={validateMutation.isPending}
+                />
+                <Button type="submit" disabled={validateMutation.isPending || !codOrcamento.trim() || !selectedUnidade} className="w-full sm:w-auto mt-2 sm:mt-0">
+                  {validateMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Search className="h-4 w-4" />
+                  )}
+                  <span className="ml-2">Buscar</span>
+                </Button>
+              </div>
+            </div>
+
+            {budgetValidation && !budgetValidation.approved && (
+              <div className="mt-4 rounded-lg border border-destructive/30 bg-destructive/5 p-3 flex items-start gap-2">
+                <XCircle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
+                <div className="text-sm text-destructive">
+                  <p><strong>Status: {budgetValidation.statusPlano}</strong></p>
+                  {budgetValidation.statusPlano === "Orçamento já utilizado" ? (
+                    <p>Este orçamento já estourou o limite de balões disponíveis (1).</p>
+                  ) : (
+                    <p>Apenas orçamentos com status "Aprovado" podem estourar balões.</p>
+                  )}
+                </div>
+              </div>
+            )}
           </form>
-        ) : (
-          <div className="rounded-lg border border-primary/30 bg-primary/5 p-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <CheckCircle className="h-5 w-5 text-primary" />
+        </DialogContent>
+      </Dialog>
+
+      <div className="mx-auto max-w-xl px-6 pt-6">
+        {canPop && (
+          <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 mb-6 shadow-sm">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3 w-full">
+                <div className="bg-primary/10 p-2 rounded-full">
+                  <CheckCircle className="h-6 w-6 text-primary" />
+                </div>
                 <div>
-                  <p className="font-display font-bold text-foreground text-sm">
-                    Orçamento #{budgetValidation.codOrcamento} — Aprovado
+                  <p className="font-display font-bold text-foreground">
+                    Orçamento #{budgetValidation.codOrcamento}
                   </p>
-                  <p className="text-xs text-muted-foreground">
-                    {budgetValidation.vendedor} • {budgetValidation.cliente}
+                  <p className="text-sm text-muted-foreground">
+                    Vendedor: <span className="font-medium text-foreground">{budgetValidation.vendedor}</span>
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Cliente: {budgetValidation.cliente}
                   </p>
                 </div>
               </div>
-              <Button variant="ghost" size="sm" onClick={handleReset}>
-                <XCircle className="h-4 w-4 mr-1" /> Trocar
+              <Button variant="outline" size="sm" onClick={handleReset} className="w-full sm:w-auto">
+                <XCircle className="h-4 w-4 mr-1" /> Sair
               </Button>
             </div>
-          </div>
-        )}
-
-        {budgetValidation && !budgetValidation.approved && (
-          <div className="mt-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3 flex items-center gap-2">
-            <XCircle className="h-5 w-5 text-destructive shrink-0" />
-            <p className="text-sm text-destructive">
-              Status: <strong>{budgetValidation.statusPlano}</strong> — Apenas orçamentos com status "Aprovado" podem participar.
-            </p>
           </div>
         )}
       </div>
@@ -196,7 +242,7 @@ export default function GamePage() {
                 </p>
               </div>
             )}
-            <div className={`grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 gap-4 ${!canPop ? "opacity-50 pointer-events-none" : ""}`}>
+            <div className={`flex flex-wrap justify-center gap-4 max-w-5xl mx-auto ${!canPop ? "opacity-50 pointer-events-none" : ""}`}>
               {balloons.map((balloon, i) => (
                 <BalloonItem
                   key={balloon.id}
@@ -218,7 +264,10 @@ export default function GamePage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            onClick={() => setPoppedResult((p) => ({ ...p, show: false }))}
+            onClick={() => {
+              setPoppedResult((p) => ({ ...p, show: false }));
+              handleReset();
+            }}
           >
             <motion.div
               className="rounded-2xl bg-card p-8 text-center shadow-2xl max-w-sm mx-4"
@@ -226,6 +275,7 @@ export default function GamePage() {
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.5, opacity: 0 }}
               transition={{ type: "spring", damping: 15 }}
+              onClick={(e) => e.stopPropagation()}
             >
               {poppedResult.premiado ? (
                 <>
@@ -233,12 +283,28 @@ export default function GamePage() {
                     <PartyPopper className="mx-auto h-16 w-16 text-secondary mb-4" />
                   </motion.div>
                   <h2 className="font-display text-3xl font-bold text-foreground mb-2">Parabéns! 🎉</h2>
+                  {poppedResult.codOrcamento && (
+                    <div className="flex flex-col items-center gap-1 mb-4">
+                      <p className="text-sm text-muted-foreground font-bold border border-border inline-block px-4 py-1 rounded-full bg-muted/50">
+                        Orçamento #{poppedResult.codOrcamento}
+                      </p>
+                      <p className="text-xs text-muted-foreground">Vendedor: {poppedResult.vendedor}</p>
+                    </div>
+                  )}
                   <p className="font-display text-4xl font-bold text-primary">R$ {poppedResult.valor.toFixed(2)}</p>
                 </>
               ) : (
                 <>
                   <Frown className="mx-auto h-16 w-16 text-muted-foreground mb-4" />
                   <h2 className="font-display text-2xl font-bold text-foreground mb-2">Não foi dessa vez!</h2>
+                  {poppedResult.codOrcamento && (
+                    <div className="flex flex-col items-center gap-1 mb-4">
+                      <p className="text-sm text-muted-foreground font-bold border border-border inline-block px-4 py-1 rounded-full bg-muted/50">
+                        Orçamento #{poppedResult.codOrcamento}
+                      </p>
+                      <p className="text-xs text-muted-foreground">Vendedor: {poppedResult.vendedor}</p>
+                    </div>
+                  )}
                   <p className="text-muted-foreground">Tente outro balão 😊</p>
                 </>
               )}
