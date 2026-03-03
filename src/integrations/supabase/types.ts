@@ -97,6 +97,27 @@ export type Database = {
           },
         ]
       }
+      unidades: {
+        Row: {
+          created_at: string
+          id: string
+          nome: string
+          token: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          nome: string
+          token: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          nome?: string
+          token?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
