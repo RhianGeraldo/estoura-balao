@@ -276,6 +276,10 @@ export default function AdminPage() {
               </CardContent>
             </Card>
           </TabsContent>
+
+          <TabsContent value="users">
+            <UsersTab />
+          </TabsContent>
         </Tabs>
       </main>
     </div>
