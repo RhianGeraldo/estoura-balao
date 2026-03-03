@@ -1,7 +1,11 @@
 import express from 'express';
 import cors from 'cors';
-import 'dotenv/config';
+import dotenv from 'dotenv';
 import { createClient } from '@libsql/client';
+
+// Load .env.local first (takes precedence), then .env as fallback
+dotenv.config({ path: '.env.local' });
+dotenv.config(); // loads .env as fallback
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
