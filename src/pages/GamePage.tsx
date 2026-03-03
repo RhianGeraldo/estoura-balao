@@ -1,12 +1,25 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getActiveAction, getBalloons, popBalloon, type Balloon } from "@/lib/api";
+import { getActiveAction, getBalloons, popBalloon, validateBudget, type Balloon } from "@/lib/api";
 import { motion, AnimatePresence } from "framer-motion";
-import { PartyPopper, Frown } from "lucide-react";
+import { PartyPopper, Frown, Search, CheckCircle, XCircle, Loader2 } from "lucide-react";
 import BalloonItem from "@/components/BalloonItem";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
+
+interface BudgetValidation {
+  approved: boolean;
+  statusPlano: string;
+  cliente: string;
+  vendedor: string;
+  codOrcamento: number;
+}
 
 export default function GamePage() {
   const queryClient = useQueryClient();
+  const [codOrcamento, setCodOrcamento] = useState("");
+  const [budgetValidation, setBudgetValidation] = useState<BudgetValidation | null>(null);
   const [poppedResult, setPoppedResult] = useState<{ show: boolean; premiado: boolean; valor: number }>({
     show: false,
     premiado: false,
@@ -26,8 +39,24 @@ export default function GamePage() {
     enabled: !!actionId,
   });
 
+  const validateMutation = useMutation({
+    mutationFn: (code: string) => validateBudget(code),
+    onSuccess: (data) => {
+      setBudgetValidation(data);
+      if (!data.approved) {
+        toast.error(`Orçamento com status "${data.statusPlano}". Apenas orçamentos aprovados podem estourar balões.`);
+      } else {
+        toast.success(`Orçamento aprovado! Vendedor: ${data.vendedor}`);
+      }
+    },
+    onError: (err: Error) => {
+      setBudgetValidation(null);
+      toast.error(err.message);
+    },
+  });
+
   const popMutation = useMutation({
-    mutationFn: (id: string) => popBalloon(id),
+    mutationFn: (id: string) => popBalloon(id, codOrcamento),
     onSuccess: (data) => {
       const b = data.balloon;
       setPoppedResult({ show: true, premiado: b.premiado, valor: Number(b.valor) });
@@ -38,6 +67,17 @@ export default function GamePage() {
       queryClient.invalidateQueries({ queryKey: ["balloons", actionId] });
     },
   });
+
+  const handleValidate = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!codOrcamento.trim()) return;
+    validateMutation.mutate(codOrcamento.trim());
+  };
+
+  const handleReset = () => {
+    setCodOrcamento("");
+    setBudgetValidation(null);
+  };
 
   if (actionLoading) {
     return (
@@ -60,6 +100,7 @@ export default function GamePage() {
   }
 
   const balloons = balloonsData?.balloons || [];
+  const canPop = budgetValidation?.approved === true;
 
   return (
     <div className="min-h-screen bg-background relative overflow-hidden">
@@ -69,26 +110,86 @@ export default function GamePage() {
           <h1 className="font-display text-3xl font-bold text-foreground">
             🎈 {actionData.action.nome}
           </h1>
-          <p className="text-muted-foreground mt-1">Clique em um balão para estourá-lo!</p>
+          <p className="text-muted-foreground mt-1">Informe o código do orçamento para estourar um balão!</p>
         </div>
       </header>
+
+      {/* Budget Validation */}
+      <div className="mx-auto max-w-xl px-6 pt-6">
+        {!canPop ? (
+          <form onSubmit={handleValidate} className="flex gap-2">
+            <Input
+              placeholder="Código do Orçamento"
+              value={codOrcamento}
+              onChange={(e) => setCodOrcamento(e.target.value)}
+              className="text-center text-lg font-display"
+              disabled={validateMutation.isPending}
+            />
+            <Button type="submit" disabled={validateMutation.isPending || !codOrcamento.trim()}>
+              {validateMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Search className="h-4 w-4" />
+              )}
+              <span className="ml-2">Validar</span>
+            </Button>
+          </form>
+        ) : (
+          <div className="rounded-lg border border-primary/30 bg-primary/5 p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <CheckCircle className="h-5 w-5 text-primary" />
+                <div>
+                  <p className="font-display font-bold text-foreground text-sm">
+                    Orçamento #{budgetValidation.codOrcamento} — Aprovado
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {budgetValidation.vendedor} • {budgetValidation.cliente}
+                  </p>
+                </div>
+              </div>
+              <Button variant="ghost" size="sm" onClick={handleReset}>
+                <XCircle className="h-4 w-4 mr-1" /> Trocar
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {budgetValidation && !budgetValidation.approved && (
+          <div className="mt-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3 flex items-center gap-2">
+            <XCircle className="h-5 w-5 text-destructive shrink-0" />
+            <p className="text-sm text-destructive">
+              Status: <strong>{budgetValidation.statusPlano}</strong> — Apenas orçamentos com status "Aprovado" podem participar.
+            </p>
+          </div>
+        )}
+      </div>
 
       {/* Balloon Grid */}
       <main className="mx-auto max-w-6xl p-6">
         {balloonsLoading ? (
           <p className="text-center text-muted-foreground">Carregando balões...</p>
         ) : (
-          <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 gap-4">
-            {balloons.map((balloon, i) => (
-              <BalloonItem
-                key={balloon.id}
-                balloon={balloon}
-                index={i}
-                onPop={() => popMutation.mutate(balloon.id)}
-                isPopping={popMutation.isPending}
-              />
-            ))}
-          </div>
+          <>
+            {!canPop && (
+              <div className="text-center mb-4">
+                <p className="text-sm text-muted-foreground">
+                  🔒 Valide um orçamento aprovado para desbloquear os balões
+                </p>
+              </div>
+            )}
+            <div className={`grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 gap-4 ${!canPop ? "opacity-50 pointer-events-none" : ""}`}>
+              {balloons.map((balloon, i) => (
+                <BalloonItem
+                  key={balloon.id}
+                  balloon={balloon}
+                  index={i}
+                  onPop={() => popMutation.mutate(balloon.id)}
+                  isPopping={popMutation.isPending}
+                />
+              ))}
+            </div>
+          </>
         )}
       </main>
 

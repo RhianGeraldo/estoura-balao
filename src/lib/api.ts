@@ -70,8 +70,18 @@ export async function getBalloons(actionId: string): Promise<{ balloons: Balloon
   return fetchApi(`balloons?action_id=${actionId}`, "GET");
 }
 
-export async function popBalloon(balloonId: string, userId?: string) {
-  return fetchApi("pop-balloon", "POST", { balloon_id: balloonId, user_id: userId });
+export async function validateBudget(codOrcamento: string): Promise<{
+  approved: boolean;
+  statusPlano: string;
+  cliente: string;
+  vendedor: string;
+  codOrcamento: number;
+}> {
+  return fetchApi("validate-budget", "POST", { cod_orcamento: codOrcamento });
+}
+
+export async function popBalloon(balloonId: string, codOrcamento?: string) {
+  return fetchApi("pop-balloon", "POST", { balloon_id: balloonId, cod_orcamento: codOrcamento });
 }
 
 export async function closeAction(actionId: string) {
