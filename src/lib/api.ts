@@ -41,6 +41,12 @@ export interface Balloon {
   data_estouro: string | null;
 }
 
+export interface Unidade {
+  id: string;
+  nome: string;
+  created_at: string;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function fetchApi(path: string, method: "GET" | "POST" = "GET", body?: any) {
   const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${FUNCTION_NAME}/${path}`;
@@ -70,14 +76,36 @@ export async function getBalloons(actionId: string): Promise<{ balloons: Balloon
   return fetchApi(`balloons?action_id=${actionId}`, "GET");
 }
 
-export async function validateBudget(codOrcamento: string): Promise<{
+export async function getUnidades(): Promise<{ unidades: Unidade[] }> {
+  return fetchApi("unidades", "GET");
+}
+
+export async function createUnidade(nome: string, token: string): Promise<{ unidade: Unidade }> {
+  return fetchApi("unidades", "POST", { nome, token });
+}
+
+export async function deleteUnidade(id: string) {
+  const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${FUNCTION_NAME}/unidades?id=${id}`;
+  const res = await fetch(url, {
+    method: "DELETE",
+    headers: {
+      "Content-Type": "application/json",
+      "apikey": import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+    },
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "API error");
+  return data;
+}
+
+export async function validateBudget(codOrcamento: string, unidadeId: string): Promise<{
   approved: boolean;
   statusPlano: string;
   cliente: string;
   vendedor: string;
   codOrcamento: number;
 }> {
-  return fetchApi("validate-budget", "POST", { cod_orcamento: codOrcamento });
+  return fetchApi("validate-budget", "POST", { cod_orcamento: codOrcamento, unidade_id: unidadeId });
 }
 
 export async function popBalloon(balloonId: string, codOrcamento?: string) {

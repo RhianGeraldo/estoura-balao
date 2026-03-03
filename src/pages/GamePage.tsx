@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getActiveAction, getBalloons, popBalloon, validateBudget, type Balloon } from "@/lib/api";
+import { getActiveAction, getBalloons, popBalloon, validateBudget, getUnidades, type Balloon, type Unidade } from "@/lib/api";
 import { motion, AnimatePresence } from "framer-motion";
 import { PartyPopper, Frown, Search, CheckCircle, XCircle, Loader2 } from "lucide-react";
 import BalloonItem from "@/components/BalloonItem";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 
 interface BudgetValidation {
@@ -18,6 +19,7 @@ interface BudgetValidation {
 
 export default function GamePage() {
   const queryClient = useQueryClient();
+  const [selectedUnidade, setSelectedUnidade] = useState("");
   const [codOrcamento, setCodOrcamento] = useState("");
   const [budgetValidation, setBudgetValidation] = useState<BudgetValidation | null>(null);
   const [poppedResult, setPoppedResult] = useState<{ show: boolean; premiado: boolean; valor: number }>({
@@ -31,6 +33,11 @@ export default function GamePage() {
     queryFn: getActiveAction,
   });
 
+  const { data: unidadesData } = useQuery({
+    queryKey: ["unidades"],
+    queryFn: getUnidades,
+  });
+
   const actionId = actionData?.action?.id;
 
   const { data: balloonsData, isLoading: balloonsLoading } = useQuery({
@@ -40,7 +47,7 @@ export default function GamePage() {
   });
 
   const validateMutation = useMutation({
-    mutationFn: (code: string) => validateBudget(code),
+    mutationFn: () => validateBudget(codOrcamento.trim(), selectedUnidade),
     onSuccess: (data) => {
       setBudgetValidation(data);
       if (!data.approved) {
@@ -70,12 +77,13 @@ export default function GamePage() {
 
   const handleValidate = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!codOrcamento.trim()) return;
-    validateMutation.mutate(codOrcamento.trim());
+    if (!codOrcamento.trim() || !selectedUnidade) return;
+    validateMutation.mutate();
   };
 
   const handleReset = () => {
     setCodOrcamento("");
+    setSelectedUnidade("");
     setBudgetValidation(null);
   };
 
@@ -100,39 +108,50 @@ export default function GamePage() {
   }
 
   const balloons = balloonsData?.balloons || [];
+  const unidades = unidadesData?.unidades || [];
   const canPop = budgetValidation?.approved === true;
 
   return (
     <div className="min-h-screen bg-background relative overflow-hidden">
-      {/* Header */}
       <header className="border-b border-border bg-card px-6 py-4">
         <div className="mx-auto max-w-6xl text-center">
           <h1 className="font-display text-3xl font-bold text-foreground">
             🎈 {actionData.action.nome}
           </h1>
-          <p className="text-muted-foreground mt-1">Informe o código do orçamento para estourar um balão!</p>
+          <p className="text-muted-foreground mt-1">Selecione a unidade e informe o código do orçamento</p>
         </div>
       </header>
 
-      {/* Budget Validation */}
       <div className="mx-auto max-w-xl px-6 pt-6">
         {!canPop ? (
-          <form onSubmit={handleValidate} className="flex gap-2">
-            <Input
-              placeholder="Código do Orçamento"
-              value={codOrcamento}
-              onChange={(e) => setCodOrcamento(e.target.value)}
-              className="text-center text-lg font-display"
-              disabled={validateMutation.isPending}
-            />
-            <Button type="submit" disabled={validateMutation.isPending || !codOrcamento.trim()}>
-              {validateMutation.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Search className="h-4 w-4" />
-              )}
-              <span className="ml-2">Validar</span>
-            </Button>
+          <form onSubmit={handleValidate} className="space-y-3">
+            <Select value={selectedUnidade} onValueChange={setSelectedUnidade}>
+              <SelectTrigger>
+                <SelectValue placeholder="Selecione a unidade" />
+              </SelectTrigger>
+              <SelectContent>
+                {unidades.map((u) => (
+                  <SelectItem key={u.id} value={u.id}>{u.nome}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <div className="flex gap-2">
+              <Input
+                placeholder="Código do Orçamento"
+                value={codOrcamento}
+                onChange={(e) => setCodOrcamento(e.target.value)}
+                className="text-center text-lg font-display"
+                disabled={validateMutation.isPending}
+              />
+              <Button type="submit" disabled={validateMutation.isPending || !codOrcamento.trim() || !selectedUnidade}>
+                {validateMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Search className="h-4 w-4" />
+                )}
+                <span className="ml-2">Validar</span>
+              </Button>
+            </div>
           </form>
         ) : (
           <div className="rounded-lg border border-primary/30 bg-primary/5 p-4">
@@ -165,7 +184,6 @@ export default function GamePage() {
         )}
       </div>
 
-      {/* Balloon Grid */}
       <main className="mx-auto max-w-6xl p-6">
         {balloonsLoading ? (
           <p className="text-center text-muted-foreground">Carregando balões...</p>
@@ -193,7 +211,6 @@ export default function GamePage() {
         )}
       </main>
 
-      {/* Result overlay */}
       <AnimatePresence>
         {poppedResult.show && (
           <motion.div
@@ -212,17 +229,11 @@ export default function GamePage() {
             >
               {poppedResult.premiado ? (
                 <>
-                  <motion.div
-                    initial={{ rotate: -10 }}
-                    animate={{ rotate: [10, -10, 10, 0] }}
-                    transition={{ duration: 0.5 }}
-                  >
+                  <motion.div initial={{ rotate: -10 }} animate={{ rotate: [10, -10, 10, 0] }} transition={{ duration: 0.5 }}>
                     <PartyPopper className="mx-auto h-16 w-16 text-secondary mb-4" />
                   </motion.div>
                   <h2 className="font-display text-3xl font-bold text-foreground mb-2">Parabéns! 🎉</h2>
-                  <p className="font-display text-4xl font-bold text-primary">
-                    R$ {poppedResult.valor.toFixed(2)}
-                  </p>
+                  <p className="font-display text-4xl font-bold text-primary">R$ {poppedResult.valor.toFixed(2)}</p>
                 </>
               ) : (
                 <>
