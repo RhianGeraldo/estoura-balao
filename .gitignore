@@ -13,7 +13,11 @@ dist-ssr
 # Sensitive files - DO NOT COMMIT
 *.local
 .env
-.env.*
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+# .env.production is safe to commit (no secrets, only public vars)
 database.sqlite
 
 # Editor directories and files
