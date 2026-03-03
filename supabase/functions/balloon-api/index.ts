@@ -172,9 +172,55 @@ serve(async (req) => {
       });
     }
 
+    // POST /validate-budget - Validate budget code against external API
+    if (req.method === "POST" && path === "validate-budget") {
+      const { cod_orcamento } = await req.json();
+      if (!cod_orcamento) {
+        return new Response(JSON.stringify({ error: "cod_orcamento é obrigatório" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const today = new Date();
+      const dtFim = today.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+      const startDate = new Date(today);
+      startDate.setMonth(startDate.getMonth() - 6);
+      const dtInicio = startDate.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+
+      const apiUrl = `https://app.bellesoftware.com.br/api/release/controller/IntegracaoExterna/v1.0/venda_planos?codEstab=1&dtInicio=${dtInicio}&dtFim=${dtFim}&codOrcamento=${cod_orcamento}`;
+
+      const apiRes = await fetch(apiUrl);
+      if (!apiRes.ok) {
+        return new Response(JSON.stringify({ error: "Erro ao consultar API externa" }), {
+          status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const apiData = await apiRes.json();
+      const planos = Array.isArray(apiData) ? apiData : [apiData];
+      const plano = planos.find((p: any) => String(p.codOrcamento) === String(cod_orcamento));
+
+      if (!plano) {
+        return new Response(JSON.stringify({ error: "Orçamento não encontrado", approved: false }), {
+          status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const approved = plano.statusPlano === "Aprovado";
+      return new Response(JSON.stringify({
+        approved,
+        statusPlano: plano.statusPlano,
+        cliente: plano.cliente,
+        vendedor: plano.vendedor,
+        codOrcamento: plano.codOrcamento,
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // POST /pop-balloon - Pop a balloon
     if (req.method === "POST" && path === "pop-balloon") {
-      const { balloon_id, user_id } = await req.json();
+      const { balloon_id, user_id, cod_orcamento } = await req.json();
 
       // Check if already popped
       const { data: balloon, error: fetchError } = await supabase
@@ -193,7 +239,7 @@ serve(async (req) => {
       // Pop balloon
       const { data: updated, error: updateError } = await supabase
         .from("balloons")
-        .update({ estourado: true, user_id: user_id || null, data_estouro: new Date().toISOString() })
+        .update({ estourado: true, user_id: cod_orcamento || user_id || null, data_estouro: new Date().toISOString() })
         .eq("id", balloon_id)
         .select()
         .single();
