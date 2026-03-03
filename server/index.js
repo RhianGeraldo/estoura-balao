@@ -544,7 +544,7 @@ setupDatabase().then(() => {
             app.use(express.static(distPath));
 
             // All other routes serve the React app
-            app.get('*', (req, res) => {
+            app.get('/{*path}', (req, res) => {
                 res.sendFile(path.join(distPath, 'index.html'));
             });
         });
