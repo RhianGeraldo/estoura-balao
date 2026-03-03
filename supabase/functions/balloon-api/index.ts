@@ -172,12 +172,78 @@ serve(async (req) => {
       });
     }
 
+    // GET /unidades - List all units
+    if (req.method === "GET" && path === "unidades") {
+      const { data, error } = await supabase
+        .from("unidades")
+        .select("id, nome, created_at")
+        .order("nome");
+
+      if (error) throw error;
+
+      return new Response(JSON.stringify({ unidades: data }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // POST /unidades - Create a unit
+    if (req.method === "POST" && path === "unidades") {
+      const { nome, token } = await req.json();
+      if (!nome || !token) {
+        return new Response(JSON.stringify({ error: "nome e token são obrigatórios" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const { data, error } = await supabase
+        .from("unidades")
+        .insert({ nome, token })
+        .select("id, nome, created_at")
+        .single();
+
+      if (error) throw error;
+
+      return new Response(JSON.stringify({ unidade: data }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // DELETE /unidades?id=xxx - Delete a unit
+    if (req.method === "DELETE" && path === "unidades") {
+      const id = url.searchParams.get("id");
+      if (!id) {
+        return new Response(JSON.stringify({ error: "id required" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const { error } = await supabase.from("unidades").delete().eq("id", id);
+      if (error) throw error;
+
+      return new Response(JSON.stringify({ success: true }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // POST /validate-budget - Validate budget code against external API
     if (req.method === "POST" && path === "validate-budget") {
-      const { cod_orcamento } = await req.json();
-      if (!cod_orcamento) {
-        return new Response(JSON.stringify({ error: "cod_orcamento é obrigatório" }), {
+      const { cod_orcamento, unidade_id } = await req.json();
+      if (!cod_orcamento || !unidade_id) {
+        return new Response(JSON.stringify({ error: "cod_orcamento e unidade_id são obrigatórios" }), {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Fetch unit token
+      const { data: unidade, error: unidadeError } = await supabase
+        .from("unidades")
+        .select("token")
+        .eq("id", unidade_id)
+        .single();
+
+      if (unidadeError || !unidade) {
+        return new Response(JSON.stringify({ error: "Unidade não encontrada" }), {
+          status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
@@ -189,7 +255,9 @@ serve(async (req) => {
 
       const apiUrl = `https://app.bellesoftware.com.br/api/release/controller/IntegracaoExterna/v1.0/venda_planos?codEstab=1&dtInicio=${dtInicio}&dtFim=${dtFim}&codOrcamento=${cod_orcamento}`;
 
-      const apiRes = await fetch(apiUrl);
+      const apiRes = await fetch(apiUrl, {
+        headers: { "Authorization": unidade.token },
+      });
       if (!apiRes.ok) {
         return new Response(JSON.stringify({ error: "Erro ao consultar API externa" }), {
           status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
