@@ -61,7 +61,7 @@ export default function GamePage() {
     onSuccess: (data) => {
       setBudgetValidation(data);
       if (!data.approved) {
-        toast.error(`Orçamento com status "${data.statusPlano}". Apenas orçamentos aprovados podem estourar balões.`);
+        toast.error(`Orçamento com status "${data.statusPlano}". Apenas orçamentos aprovados podem ${gameConfig.actionVerb.toLowerCase()} ${gameConfig.itemNamePlural}.`);
       } else {
         toast.success(`Orçamento aprovado! Vendedor: ${data.vendedor}`);
       }
@@ -289,7 +289,7 @@ export default function GamePage() {
 
       <main className="mx-auto max-w-6xl p-6">
         {balloonsLoading ? (
-          <p className="text-center text-muted-foreground">Carregando balões...</p>
+          <p className="text-center text-muted-foreground">Carregando {getGameTypeConfig(activeAction?.tipo_jogo).itemNamePlural}...</p>
         ) : (
           <>
             {!canPop && (

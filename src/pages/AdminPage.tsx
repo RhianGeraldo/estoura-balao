@@ -55,7 +55,8 @@ export default function AdminPage() {
   const createMutation = useMutation({
     mutationFn: createAction,
     onSuccess: () => {
-      toast.success("Ação criada e balões gerados com sucesso!");
+      const gt = getGameTypeConfig(form.tipo_jogo || "balloon");
+      toast.success(`Ação criada e ${gt.itemNamePlural} gerados com sucesso!`);
       queryClient.invalidateQueries({ queryKey: ["active-actions"] });
       setForm(defaultValues);
       setIsCreateModalOpen(false);
@@ -226,7 +227,7 @@ export default function AdminPage() {
                             <PartyPopper className="h-5 w-5 text-primary" />
                             Histórico de Prêmios
                           </h3>
-                          <PoppedHistory actionId={action.id} />
+                          <PoppedHistory actionId={action.id} gameType={action.tipo_jogo || 'balloon'} />
                         </div>
                       </div>
                     </CardContent>
@@ -389,7 +390,7 @@ export default function AdminPage() {
                           <Input id="orcamento" type="number" value={form.orcamento_total} onChange={(e) => update("orcamento_total", e.target.value)} min={1} required />
                         </div>
                         <div>
-                          <Label htmlFor="qtd_baloes">Qtd. Balões</Label>
+                          <Label htmlFor="qtd_baloes">Qtd. {getGameTypeConfig(form.tipo_jogo || "balloon").labelPlural}</Label>
                           <Input id="qtd_baloes" type="number" value={form.qtd_baloes} onChange={(e) => update("qtd_baloes", e.target.value)} min={1} required />
                         </div>
                         <div>
@@ -501,7 +502,7 @@ function SellerRankings({ actionId }: { actionId: string }) {
   });
 
   if (isLoading) return <p className="text-sm text-muted-foreground">Carregando ranking...</p>;
-  if (!data?.history || data.history.length === 0) return <p className="text-sm text-muted-foreground">Nenhum balão estourado ainda.</p>;
+  if (!data?.history || data.history.length === 0) return <p className="text-sm text-muted-foreground">Nenhuma atividade registrada ainda.</p>;
 
   // Aggregate history back into stats
   const statsMap = new Map<string, number>();
@@ -523,7 +524,7 @@ function SellerRankings({ actionId }: { actionId: string }) {
             </div>
             <span className="font-medium text-sm truncate max-w-[120px]" title={stat.vendedor}>{stat.vendedor}</span>
           </div>
-          <span className="font-bold text-primary">{stat.baloes_estourados} {stat.baloes_estourados === 1 ? 'balão' : 'balões'}</span>
+          <span className="font-bold text-primary">{stat.baloes_estourados} {stat.baloes_estourados === 1 ? 'item' : 'itens'}</span>
         </div>
       ))}
     </div>
@@ -573,7 +574,7 @@ function ActionHistoryTab() {
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-4">
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 sm:gap-6 text-sm w-full md:w-auto">
                 <div>
-                  <p className="text-muted-foreground">Balões</p>
+                  <p className="text-muted-foreground">{getGameTypeConfig(act.tipo_jogo).labelPlural}</p>
                   <p className="font-bold">{act.estourados || 0} / {act.qtd_baloes}</p>
                 </div>
                 <div>
@@ -618,9 +619,9 @@ function ActionHistoryTab() {
                 <div>
                   <h3 className="font-display font-bold text-lg mb-4 flex items-center gap-2">
                     <PartyPopper className="h-5 w-5 text-primary" />
-                    Histórico de Estouros
+                    Histórico de {getGameTypeConfig(act.tipo_jogo).labelPlural}
                   </h3>
-                  <PoppedHistory actionId={act.id} />
+                  <PoppedHistory actionId={act.id} gameType={act.tipo_jogo} />
                 </div>
               </div>
             )}
@@ -631,7 +632,7 @@ function ActionHistoryTab() {
   );
 }
 
-function PoppedHistory({ actionId }: { actionId: string }) {
+function PoppedHistory({ actionId, gameType }: { actionId: string, gameType: string }) {
   const { data, isLoading } = useQuery({
     queryKey: ["vendedores-stats", actionId],
     queryFn: () => getVendedoresStats(actionId),
@@ -639,7 +640,9 @@ function PoppedHistory({ actionId }: { actionId: string }) {
   });
 
   if (isLoading) return <p className="text-sm text-muted-foreground">Carregando histórico...</p>;
-  if (!data?.history || data.history.length === 0) return <p className="text-sm text-muted-foreground">Nenhum balão estourado ainda.</p>;
+  
+  const gt = getGameTypeConfig(gameType);
+  if (!data?.history || data.history.length === 0) return <p className="text-sm text-muted-foreground">Nenhum(a) {gt.itemName} {gt.actionVerb.toLowerCase()} ainda.</p>;
 
   return (
     <div className="flex flex-col gap-3 max-h-[400px] overflow-y-auto pr-2">
