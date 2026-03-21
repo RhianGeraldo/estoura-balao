@@ -100,6 +100,7 @@ async function setupDatabase() {
       id TEXT PRIMARY KEY,
       username TEXT UNIQUE NOT NULL,
       password_hash TEXT NOT NULL,
+      nome TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
   `);
@@ -113,6 +114,13 @@ async function setupDatabase() {
     // Alter table if tipo_jogo column does not exist (for backward compatibility)
     try {
         await db.run("ALTER TABLE actions ADD COLUMN tipo_jogo TEXT DEFAULT 'balloon';");
+    } catch (e) { }
+    // Add nome to users and created_by to actions
+    try {
+        await db.run("ALTER TABLE users ADD COLUMN nome TEXT;");
+    } catch (e) { }
+    try {
+        await db.run("ALTER TABLE actions ADD COLUMN created_by TEXT;");
     } catch (e) { }
     // Create action_unidades table for N:N relationship between campaigns and stores
     try {
@@ -136,8 +144,11 @@ async function setupDatabase() {
     if (userCount.count === 0) {
         const id = crypto.randomUUID();
         const hash = await bcrypt.hash("admin123", 10);
-        await db.run("INSERT INTO users (id, username, password_hash) VALUES (?, ?, ?)", [id, "admin@admin.com", hash]);
+        await db.run("INSERT INTO users (id, username, password_hash, nome) VALUES (?, ?, ?, ?)", [id, "admin@admin.com", hash, "Administrador"]);
         console.log("Default admin user created: admin@admin.com / admin123");
+    } else {
+        // Update existing default admin if name is missing
+        await db.run("UPDATE users SET nome = 'Administrador' WHERE username = 'admin@admin.com' AND (nome IS NULL OR nome = '')");
     }
 }
 
@@ -171,9 +182,11 @@ const authMiddleware = (req, res, next) => {
     const token = req.headers.authorization?.split(' ')[1];
     if (!token) return res.status(401).json({ error: "Acesso negado." });
     try {
-        jwt.verify(token, process.env.JWT_SECRET || 'super-secret-key-123');
+        const decoded = jwt.verify(token, JWT_SECRET);
+        req.user = decoded;
         next();
     } catch (e) {
+        console.error("Auth Error:", e.message);
         res.status(401).json({ error: "Token inválido ou expirado." });
     }
 };
@@ -192,9 +205,9 @@ app.post('/api/create-action', authMiddleware, async (req, res) => {
 
         const actionId = crypto.randomUUID();
         await db.run(
-            `INSERT INTO actions (id, nome, tipo_jogo, orcamento_total, qtd_baloes, qtd_premiados, valor_multiplo, valor_minimo, valor_maximo)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [actionId, nome, tipoJogo, orcamento_total, qtd_baloes, qtd_premiados, valor_multiplo, valor_minimo, valor_maximo]
+            `INSERT INTO actions (id, nome, tipo_jogo, orcamento_total, qtd_baloes, qtd_premiados, valor_multiplo, valor_minimo, valor_maximo, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [actionId, nome, tipoJogo, orcamento_total, qtd_baloes, qtd_premiados, valor_multiplo, valor_minimo, valor_maximo, req.user.id]
         );
 
         const action = await db.get("SELECT * FROM actions WHERE id = ?", [actionId]);
@@ -284,7 +297,13 @@ app.put('/api/actions/:id', authMiddleware, async (req, res) => {
 // GET /active-actions
 app.get('/api/active-actions', async (req, res) => {
     try {
-        const actions = await db.all("SELECT * FROM actions WHERE status = 'active' ORDER BY created_at DESC");
+        const actions = await db.all(`
+            SELECT a.*, u.nome as created_by_name 
+            FROM actions a 
+            LEFT JOIN users u ON a.created_by = u.id 
+            WHERE a.status = 'active' 
+            ORDER BY a.created_at DESC
+        `);
 
         if (!actions || actions.length === 0) return res.json({ actions: [] });
 
@@ -404,7 +423,12 @@ app.get('/api/active-action', async (req, res) => {
 // GET /actions (History of all campaigns)
 app.get('/api/actions', authMiddleware, async (req, res) => {
     try {
-        const actions = await db.all("SELECT * FROM actions ORDER BY created_at DESC");
+        const actions = await db.all(`
+            SELECT a.*, u.nome as created_by_name 
+            FROM actions a 
+            LEFT JOIN users u ON a.created_by = u.id 
+            ORDER BY a.created_at DESC
+        `);
 
         // Let's also fetch the number of balloons popped for each action to show in the list
         for (const action of actions) {
@@ -641,7 +665,7 @@ app.post('/api/login', async (req, res) => {
 
 app.get('/api/users', authMiddleware, async (req, res) => {
     try {
-        const users = await db.all("SELECT id, username, created_at FROM users ORDER BY created_at DESC");
+        const users = await db.all("SELECT id, username, nome, created_at FROM users ORDER BY created_at DESC");
         res.json({ users });
     } catch (err) {
         console.error(err);
@@ -651,17 +675,18 @@ app.get('/api/users', authMiddleware, async (req, res) => {
 
 app.post('/api/users', authMiddleware, async (req, res) => {
     try {
-        const { username, password } = req.body;
-        if (!username || !password) return res.status(400).json({ error: "Informe usuário e senha." });
+        const { username, password, nome } = req.body;
+        if (!username || !password || !nome) return res.status(400).json({ error: "Informe nome, usuário e senha." });
+        if (password.length < 6) return res.status(400).json({ error: "A senha deve ter no mínimo 6 caracteres." });
 
         const existing = await db.get("SELECT id FROM users WHERE username = ?", [username]);
         if (existing) return res.status(400).json({ error: "Usuário já existe." });
 
         const id = crypto.randomUUID();
         const hash = await bcrypt.hash(password, 10);
-        await db.run("INSERT INTO users (id, username, password_hash) VALUES (?, ?, ?)", [id, username, hash]);
+        await db.run("INSERT INTO users (id, username, password_hash, nome) VALUES (?, ?, ?, ?)", [id, username, hash, nome]);
 
-        const user = await db.get("SELECT id, username, created_at FROM users WHERE id = ?", [id]);
+        const user = await db.get("SELECT id, username, nome, created_at FROM users WHERE id = ?", [id]);
         res.json({ user });
     } catch (err) {
         console.error(err);
@@ -677,6 +702,38 @@ app.delete('/api/users/:id', authMiddleware, async (req, res) => {
 
         await db.run("DELETE FROM users WHERE id = ?", [id]);
         res.json({ success: true, message: "Usuário excluído com sucesso." });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// PUT /users/:id (Edit name, email and optionally password)
+app.put('/api/users/:id', authMiddleware, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { username, nome, password } = req.body;
+
+        if (!username || !nome) {
+            return res.status(400).json({ error: "Nome e e-mail são obrigatórios." });
+        }
+
+        if (password && password.length > 0 && password.length < 6) {
+            return res.status(400).json({ error: "A nova senha deve ter no mínimo 6 caracteres." });
+        }
+
+        const existing = await db.get("SELECT id FROM users WHERE username = ? AND id != ?", [username, id]);
+        if (existing) return res.status(400).json({ error: "E-mail/Usuário já está em uso por outro administrador." });
+
+        if (password && password.length > 0) {
+            const hash = await bcrypt.hash(password, 10);
+            await db.run("UPDATE users SET username = ?, nome = ?, password_hash = ? WHERE id = ?", [username, nome, hash, id]);
+        } else {
+            await db.run("UPDATE users SET username = ?, nome = ? WHERE id = ?", [username, nome, id]);
+        }
+
+        const user = await db.get("SELECT id, username, nome, created_at FROM users WHERE id = ?", [id]);
+        res.json({ user, message: "Administrador atualizado com sucesso." });
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: err.message });

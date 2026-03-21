@@ -24,6 +24,7 @@ export interface Action {
   valor_maximo: number;
   status: string;
   created_at: string;
+  created_by_name?: string;
   unidades?: Unidade[]; // The API returns full Unidade objects for active-action
 }
 
@@ -52,7 +53,9 @@ export interface Unidade {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function fetchApi(path: string, method: "GET" | "POST" | "DELETE" | "PUT" = "GET", body?: any) {
-  const baseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:3000";
+  const isDev = import.meta.env.DEV;
+  const envBaseUrl = import.meta.env.VITE_API_BASE_URL;
+  const baseUrl = envBaseUrl || (isDev ? "http://localhost:3000" : "");
   const url = `${baseUrl}/api/${path}`;
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -142,12 +145,16 @@ export async function login(username: string, password: string): Promise<{ token
   return fetchApi("login", "POST", { username, password });
 }
 
-export async function getUsers(): Promise<{ users: { id: string, username: string, created_at: string }[] }> {
+export async function getUsers(): Promise<{ users: { id: string, username: string, nome: string, created_at: string }[] }> {
   return fetchApi("users", "GET");
 }
 
-export async function createUser(username: string, password: string) {
-  return fetchApi("users", "POST", { username, password });
+export async function createUser(username: string, password: string, nome: string) {
+  return fetchApi("users", "POST", { username, password, nome });
+}
+
+export async function updateUser(id: string, payload: { username: string, nome: string, password?: string }) {
+  return fetchApi(`users/${id}`, "PUT", payload);
 }
 
 export async function deleteUser(id: string) {

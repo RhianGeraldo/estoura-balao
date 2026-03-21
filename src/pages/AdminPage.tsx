@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { createAction, getActiveActions, updateAction, closeAction, getUnidades, createUnidade, deleteUnidade, getVendedoresStats, getActions, reopenAction, getUsers, createUser, deleteUser, changePassword, type ActionPayload } from "@/lib/api";
+import { createAction, getActiveActions, updateAction, closeAction, getUnidades, createUnidade, deleteUnidade, getVendedoresStats, getActions, reopenAction, getUsers, createUser, deleteUser, changePassword, updateUser, type ActionPayload } from "@/lib/api";
 import { GAME_TYPE_LIST, getGameTypeConfig } from "@/lib/gameTypes";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -29,6 +29,7 @@ export default function AdminPage() {
   const navigate = useNavigate();
   const [form, setForm] = useState<ActionPayload>(defaultValues);
   const [editingAction, setEditingAction] = useState<{ id: string, nome: string, unidades: string[] } | null>(null);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 
   const handleLogout = () => {
     localStorage.removeItem("adminToken");
@@ -57,6 +58,7 @@ export default function AdminPage() {
       toast.success("Ação criada e balões gerados com sucesso!");
       queryClient.invalidateQueries({ queryKey: ["active-actions"] });
       setForm(defaultValues);
+      setIsCreateModalOpen(false);
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -150,19 +152,42 @@ export default function AdminPage() {
 
           <TabsContent value="dashboard" className="space-y-6">
             {/* Ações Ativas List */}
-            {(activeActionsData?.actions || []).length > 0 && (
+            {(activeActionsData?.actions || []).length === 0 ? (
+              <Card className="border-dashed border-2 bg-muted/30">
+                <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+                  <PartyPopper className="h-12 w-12 text-muted-foreground mb-4 opacity-50" />
+                  <h3 className="font-display text-xl font-bold text-foreground">A festa ainda não começou!</h3>
+                  <p className="text-muted-foreground mt-2 max-w-sm mb-6 mx-auto">
+                    Nenhuma campanha está rolando no momento. Crie sua primeira ação para engajar seus clientes.
+                  </p>
+                  <Button onClick={() => setIsCreateModalOpen(true)} className="gap-2">
+                    <Plus className="h-4 w-4" /> Criar Nova Ação
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : (
               <div className="space-y-6">
-                <h2 className="font-display text-2xl font-bold flex items-center gap-2">
-                  <Trophy className="h-6 w-6 text-primary" />
-                  Campanhas Ativas
-                </h2>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <h2 className="font-display text-2xl font-bold flex items-center gap-2">
+                    <Trophy className="h-6 w-6 text-primary" />
+                    Campanhas Ativas
+                  </h2>
+                  <Button onClick={() => setIsCreateModalOpen(true)} className="gap-2">
+                    <Plus className="h-4 w-4" /> Nova Ação
+                  </Button>
+                </div>
                 {(activeActionsData?.actions || []).map(({ action, stats }) => (
                   <Card key={action.id} className="border-2 border-primary/20">
                     <CardHeader>
                       <CardTitle className="font-display flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                         <div className="flex items-center gap-2">
                           <span className="text-2xl">{getGameTypeConfig(action.tipo_jogo || 'balloon').emoji}</span>
-                          <span>{action.nome}</span>
+                          <div className="flex flex-col">
+                            <span>{action.nome}</span>
+                            {action.created_by_name && (
+                              <span className="text-xs font-normal text-muted-foreground mt-0.5">🧑‍💼 Criado por: {action.created_by_name}</span>
+                            )}
+                          </div>
                         </div>
                         <div className="flex items-center gap-2">
                           <Button variant="outline" size="sm" onClick={() => setEditingAction({ id: action.id, nome: action.nome, unidades: action.unidades?.map((u: any) => u.id) || [] })}>
@@ -269,12 +294,12 @@ export default function AdminPage() {
               </div>
             )}
 
-            {/* Form sempre visualizavel para criar mais ações */}
-            <Card>
-                <CardHeader>
-                  <CardTitle className="font-display">Criar Nova Ação</CardTitle>
-                </CardHeader>
-                <CardContent>
+            {/* Modal de Criação */}
+            <Dialog open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen}>
+              <DialogContent className="sm:max-w-3xl w-[95vw] rounded-lg p-6 max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle className="font-display text-2xl">Criar Nova Ação</DialogTitle>
+                </DialogHeader>
                   {isLoading ? (
                     <p className="text-muted-foreground">Carregando...</p>
                   ) : (
@@ -384,13 +409,16 @@ export default function AdminPage() {
                           <Input id="valor_maximo" type="number" value={form.valor_maximo} onChange={(e) => update("valor_maximo", e.target.value)} min={1} required />
                         </div>
                       </div>
-                      <Button type="submit" className="w-full" disabled={createMutation.isPending || !form.unidades || form.unidades.length === 0}>
-                        {createMutation.isPending ? "Gerando..." : `${getGameTypeConfig(form.tipo_jogo || "balloon").emoji} Gerar ${getGameTypeConfig(form.tipo_jogo || "balloon").labelPlural}`}
-                      </Button>
+                      <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 mt-6">
+                        <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => setIsCreateModalOpen(false)}>Cancelar</Button>
+                        <Button type="submit" className="w-full sm:w-auto" disabled={createMutation.isPending || !form.unidades || form.unidades.length === 0}>
+                          {createMutation.isPending ? "Gerando..." : `${getGameTypeConfig(form.tipo_jogo || "balloon").emoji} Gerar ${getGameTypeConfig(form.tipo_jogo || "balloon").labelPlural}`}
+                        </Button>
+                      </div>
                     </form>
                   )}
-                </CardContent>
-              </Card>
+              </DialogContent>
+            </Dialog>
           </TabsContent>
 
           <TabsContent value="history" className="space-y-6">
@@ -534,7 +562,12 @@ function ActionHistoryTab() {
           )}
           <CardHeader>
             <CardTitle>{getGameTypeConfig(act.tipo_jogo).emoji} {act.nome}</CardTitle>
-            <CardDescription>Criada em {new Date(act.created_at).toLocaleDateString("pt-BR")}</CardDescription>
+            <CardDescription className="flex flex-col gap-0.5 mt-1">
+              <span>Criada em {new Date(act.created_at).toLocaleDateString("pt-BR")}</span>
+              {act.created_by_name && (
+                <span>🧑‍💼 Criado por: {act.created_by_name}</span>
+              )}
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-4">
@@ -631,6 +664,11 @@ function PoppedHistory({ actionId }: { actionId: string }) {
 function UsersTab() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [nome, setNome] = useState("");
+  const [editingUser, setEditingUser] = useState<{ id: string, username: string, nome: string } | null>(null);
+  const [editUsername, setEditUsername] = useState("");
+  const [editNome, setEditNome] = useState("");
+  const [editPassword, setEditPassword] = useState("");
   const [currentPw, setCurrentPw] = useState("");
   const [newPw, setNewPw] = useState("");
   const [confirmPw, setConfirmPw] = useState("");
@@ -643,11 +681,15 @@ function UsersTab() {
   });
 
   const createMutation = useMutation({
-    mutationFn: () => createUser(username, password),
+    mutationFn: () => {
+      if (password.length < 6) throw new Error("A senha deve ter no mínimo 6 caracteres.");
+      return createUser(username, password, nome);
+    },
     onSuccess: () => {
       toast.success("Usuário criado com sucesso!");
       setUsername("");
       setPassword("");
+      setNome("");
       queryClient.invalidateQueries({ queryKey: ["users"] });
     },
     onError: (err: Error) => toast.error(err.message),
@@ -672,6 +714,28 @@ function UsersTab() {
     },
     onError: (err: Error) => toast.error(err.message),
   });
+
+  const updateUserMutation = useMutation({
+    mutationFn: (payload: { username: string, nome: string, password?: string }) => {
+      if (payload.password && payload.password.length > 0 && payload.password.length < 6) {
+        throw new Error("A nova senha deve ter no mínimo 6 caracteres.");
+      }
+      return updateUser(editingUser!.id, payload);
+    },
+    onSuccess: (data: any) => {
+      toast.success(data.message);
+      setEditingUser(null);
+      setEditPassword("");
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const handleOpenEdit = (user: any) => {
+    setEditingUser(user);
+    setEditUsername(user.username);
+    setEditNome(user.nome || "");
+  };
 
   const handleChangePassword = (e: React.FormEvent) => {
     e.preventDefault();
@@ -699,20 +763,31 @@ function UsersTab() {
                         <User className="h-4 w-4 text-primary" />
                       </div>
                       <div>
-                        <p className="font-bold text-foreground">{user.username}</p>
+                        <p className="font-bold text-foreground">
+                          {user.nome || "Sem Nome"} <span className="font-normal text-muted-foreground text-sm">({user.username})</span>
+                        </p>
                         <p className="text-xs text-muted-foreground border-t border-border/50 pt-1 mt-1">
                           Criado em {new Date(user.created_at).toLocaleDateString("pt-BR")}
                         </p>
                       </div>
                     </div>
-                    <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10" onClick={() => { if (confirm("Deseja apagar este administrador?")) deleteMutation.mutate(user.id); }}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    <div className="flex items-center gap-1">
+                      <Button variant="ghost" size="sm" className="text-primary hover:bg-primary/10" onClick={() => handleOpenEdit(user)}>
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10" onClick={() => { if (confirm("Deseja apagar este administrador?")) deleteMutation.mutate(user.id); }}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
                 ))}
               </div>
 
               <form onSubmit={(e) => { e.preventDefault(); createMutation.mutate(); }} className="flex flex-col sm:flex-row gap-4 items-end bg-muted/50 p-4 rounded-lg border border-border">
+                <div className="flex-1 space-y-2 w-full">
+                  <Label htmlFor="newNome">Nome Completo</Label>
+                  <Input id="newNome" placeholder="Ex: João Silva" value={nome} onChange={(e) => setNome(e.target.value)} required />
+                </div>
                 <div className="flex-1 space-y-2 w-full">
                   <Label htmlFor="newUsername">E-mail / Usuário</Label>
                   <Input id="newUsername" type="email" placeholder="admin@email.com" value={username} onChange={(e) => setUsername(e.target.value)} required />
@@ -727,6 +802,42 @@ function UsersTab() {
               </form>
             </div>
           )}
+
+          <Dialog open={!!editingUser} onOpenChange={(open) => !open && setEditingUser(null)}>
+            <DialogContent className="sm:max-w-[425px]">
+              <DialogHeader>
+                <DialogTitle>Editar Administrador</DialogTitle>
+                <DialogDescription>Altere os dados de acesso do administrador selecionado.</DialogDescription>
+              </DialogHeader>
+              <form onSubmit={(e) => {
+                e.preventDefault();
+                updateUserMutation.mutate({
+                  username: editUsername,
+                  nome: editNome,
+                  password: editPassword || undefined
+                });
+              }} className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label htmlFor="editNome">Nome Completo</Label>
+                  <Input id="editNome" value={editNome} onChange={(e) => setEditNome(e.target.value)} required />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="editUsername">E-mail / Usuário</Label>
+                  <Input id="editUsername" type="email" value={editUsername} onChange={(e) => setEditUsername(e.target.value)} required />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="editPassword">Nova Senha (opcional)</Label>
+                  <Input id="editPassword" type="password" placeholder="Deixe em branco para manter a atual" value={editPassword} onChange={(e) => setEditPassword(e.target.value)} />
+                </div>
+                <div className="flex justify-end gap-2 pt-4">
+                  <Button type="button" variant="outline" onClick={() => setEditingUser(null)}>Cancelar</Button>
+                  <Button type="submit" disabled={updateUserMutation.isPending}>
+                    {updateUserMutation.isPending ? "Salvando..." : "Salvar Alterações"}
+                  </Button>
+                </div>
+              </form>
+            </DialogContent>
+          </Dialog>
         </CardContent>
       </Card>
 
