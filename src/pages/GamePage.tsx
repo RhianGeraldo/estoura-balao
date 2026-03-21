@@ -289,7 +289,7 @@ export default function GamePage() {
 
       <main className="mx-auto max-w-6xl p-6">
         {balloonsLoading ? (
-          <p className="text-center text-muted-foreground">Carregando {getGameTypeConfig(activeAction?.tipo_jogo).itemNamePlural}...</p>
+          <p className="text-center text-muted-foreground">Carregando {gameConfig.itemNamePlural}...</p>
         ) : (
           <>
             {!canPop && (
