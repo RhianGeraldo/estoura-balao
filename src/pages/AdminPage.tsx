@@ -1,29 +1,34 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { createAction, getActiveAction, closeAction, getUnidades, createUnidade, deleteUnidade, getVendedoresStats, getActions, reopenAction, getUsers, createUser, deleteUser, changePassword, type ActionPayload } from "@/lib/api";
+import { createAction, getActiveActions, updateAction, closeAction, getUnidades, createUnidade, deleteUnidade, getVendedoresStats, getActions, reopenAction, getUsers, createUser, deleteUser, changePassword, type ActionPayload } from "@/lib/api";
+import { GAME_TYPE_LIST, getGameTypeConfig } from "@/lib/gameTypes";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { PartyPopper, Trophy, Target, DollarSign, XCircle, Building2, Trash2, Plus, ChevronDown, ChevronUp, LogOut, User } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { PartyPopper, Trophy, Target, DollarSign, XCircle, Building2, Trash2, Plus, ChevronDown, ChevronUp, LogOut, User, Edit, CheckCircle } from "lucide-react";
 
 const defaultValues: ActionPayload = {
   nome: "",
+  tipo_jogo: "balloon",
   orcamento_total: 1000,
   qtd_baloes: 20,
   qtd_premiados: 5,
   valor_multiplo: 10,
   valor_minimo: 50,
   valor_maximo: 500,
+  unidades: [],
 };
 
 export default function AdminPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [form, setForm] = useState<ActionPayload>(defaultValues);
+  const [editingAction, setEditingAction] = useState<{ id: string, nome: string, unidades: string[] } | null>(null);
 
   const handleLogout = () => {
     localStorage.removeItem("adminToken");
@@ -33,9 +38,9 @@ export default function AdminPage() {
   const [unidadeNome, setUnidadeNome] = useState("");
   const [unidadeToken, setUnidadeToken] = useState("");
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["active-action"],
-    queryFn: getActiveAction,
+  const { data: activeActionsData, isLoading } = useQuery({
+    queryKey: ["active-actions"],
+    queryFn: getActiveActions,
     refetchInterval: 5000,
   });
 
@@ -43,12 +48,14 @@ export default function AdminPage() {
     queryKey: ["unidades"],
     queryFn: getUnidades,
   });
+  
+  const unidades = unidadesData?.unidades || [];
 
   const createMutation = useMutation({
     mutationFn: createAction,
     onSuccess: () => {
       toast.success("Ação criada e balões gerados com sucesso!");
-      queryClient.invalidateQueries({ queryKey: ["active-action"] });
+      queryClient.invalidateQueries({ queryKey: ["active-actions"] });
       setForm(defaultValues);
     },
     onError: (err: Error) => toast.error(err.message),
@@ -58,7 +65,17 @@ export default function AdminPage() {
     mutationFn: (id: string) => closeAction(id),
     onSuccess: () => {
       toast.success("Ação encerrada!");
-      queryClient.invalidateQueries({ queryKey: ["active-action"] });
+      queryClient.invalidateQueries({ queryKey: ["active-actions"] });
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: (data: { id: string; payload: { nome: string; unidades: string[] } }) => updateAction(data.id, data.payload),
+    onSuccess: () => {
+      toast.success("Ação atualizada com sucesso!");
+      queryClient.invalidateQueries({ queryKey: ["active-actions"] });
+      setEditingAction(null);
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -99,9 +116,7 @@ export default function AdminPage() {
     setForm((f) => ({ ...f, [field]: numFields.includes(field) ? Number(value) : value }));
   };
 
-  const action = data?.action;
-  const stats = data?.stats;
-  const unidades = unidadesData?.unidades || [];
+
 
   return (
     <div className="min-h-screen bg-background">
@@ -127,55 +142,135 @@ export default function AdminPage() {
       <main className="mx-auto max-w-5xl p-6">
         <Tabs defaultValue="dashboard" className="space-y-6">
           <TabsList className="flex flex-col sm:flex-row w-full max-w-3xl mx-auto h-auto p-1 bg-muted rounded-lg">
-            <TabsTrigger value="dashboard" className="w-full sm:w-auto">Ação Ativa</TabsTrigger>
+            <TabsTrigger value="dashboard" className="w-full sm:w-auto">Ações Ativas</TabsTrigger>
             <TabsTrigger value="history" className="w-full sm:w-auto">Histórico</TabsTrigger>
             <TabsTrigger value="unidades" className="w-full sm:w-auto">Lojas</TabsTrigger>
             <TabsTrigger value="users" className="w-full sm:w-auto">Admins</TabsTrigger>
           </TabsList>
 
           <TabsContent value="dashboard" className="space-y-6">
-            {action ? (
-              <Card className="border-2 border-primary/20">
-                <CardHeader>
-                  <CardTitle className="font-display flex items-center gap-2">
-                    <Trophy className="h-5 w-5 text-secondary" />
-                    Ação Ativa: {action.nome}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4">
-                    <StatCard icon={<Target className="h-5 w-5" />} label="Total Balões" value={stats?.total_baloes ?? 0} />
-                    <StatCard icon={<PartyPopper className="h-5 w-5" />} label="Estourados" value={stats?.estourados ?? 0} />
-                    <StatCard icon={<DollarSign className="h-5 w-5" />} label="Distribuído" value={`R$ ${(stats?.total_distribuido ?? 0).toFixed(2)}`} />
-                    <StatCard icon={<DollarSign className="h-5 w-5" />} label="Restante" value={`R$ ${(stats?.orcamento_restante ?? 0).toFixed(2)}`} />
-                  </div>
-                  <div className="mt-6 flex justify-end">
-                    <Button variant="destructive" onClick={() => closeMutation.mutate(action.id)} disabled={closeMutation.isPending}>
-                      <XCircle className="mr-2 h-4 w-4" /> Encerrar Ação
-                    </Button>
-                  </div>
+            {/* Ações Ativas List */}
+            {(activeActionsData?.actions || []).length > 0 && (
+              <div className="space-y-6">
+                <h2 className="font-display text-2xl font-bold flex items-center gap-2">
+                  <Trophy className="h-6 w-6 text-primary" />
+                  Campanhas Ativas
+                </h2>
+                {(activeActionsData?.actions || []).map(({ action, stats }) => (
+                  <Card key={action.id} className="border-2 border-primary/20">
+                    <CardHeader>
+                      <CardTitle className="font-display flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div className="flex items-center gap-2">
+                          <span className="text-2xl">{getGameTypeConfig(action.tipo_jogo || 'balloon').emoji}</span>
+                          <span>{action.nome}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button variant="outline" size="sm" onClick={() => setEditingAction({ id: action.id, nome: action.nome, unidades: action.unidades?.map((u: any) => u.id) || [] })}>
+                            <Edit className="mr-2 h-4 w-4" /> Editar
+                          </Button>
+                          <Button variant="destructive" size="sm" onClick={() => closeMutation.mutate(action.id)} disabled={closeMutation.isPending}>
+                            <XCircle className="mr-2 h-4 w-4" /> Encerrar Ação
+                          </Button>
+                        </div>
+                      </CardTitle>
+                      {action.unidades && action.unidades.length > 0 && (
+                        <CardDescription>
+                          Lojas participantes: {action.unidades.map(u => u.nome).join(', ')}
+                        </CardDescription>
+                      )}
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4">
+                        <StatCard icon={<Target className="h-5 w-5" />} label="Qtd de Itens" value={stats?.total_baloes ?? 0} />
+                        <StatCard icon={<PartyPopper className="h-5 w-5" />} label="Abertos" value={stats?.estourados ?? 0} />
+                        <StatCard icon={<DollarSign className="h-5 w-5" />} label="Distribuído" value={`R$ ${(stats?.total_distribuido ?? 0).toFixed(2)}`} />
+                        <StatCard icon={<DollarSign className="h-5 w-5" />} label="Restante" value={`R$ ${((action.orcamento_total || 0) - (stats?.total_distribuido ?? 0)).toFixed(2)}`} />
+                      </div>
 
-                  {/* Popped History and Rankings Section */}
-                  <div className="mt-8 pt-6 border-t border-border grid grid-cols-1 lg:grid-cols-2 gap-8">
-                    <div>
-                      <h3 className="font-display font-bold text-lg mb-4 flex items-center gap-2">
-                        <Trophy className="h-5 w-5 text-yellow-500" />
-                        Ranking de Vendedores
-                      </h3>
-                      <SellerRankings actionId={action.id} />
-                    </div>
-                    <div>
-                      <h3 className="font-display font-bold text-lg mb-4 flex items-center gap-2">
-                        <PartyPopper className="h-5 w-5 text-primary" />
-                        Histórico de Estouros
-                      </h3>
-                      <PoppedHistory actionId={action.id} />
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ) : (
-              <Card>
+                      {/* Popped History and Rankings Section */}
+                      <div className="mt-8 pt-6 border-t border-border grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        <div>
+                          <h3 className="font-display font-bold text-lg mb-4 flex items-center gap-2">
+                            <Trophy className="h-5 w-5 text-yellow-500" />
+                            Ranking de Vendedores
+                          </h3>
+                          <SellerRankings actionId={action.id} />
+                        </div>
+                        <div>
+                          <h3 className="font-display font-bold text-lg mb-4 flex items-center gap-2">
+                            <PartyPopper className="h-5 w-5 text-primary" />
+                            Histórico de Prêmios
+                          </h3>
+                          <PoppedHistory actionId={action.id} />
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+
+                {/* Modal de Edição */}
+                <Dialog open={!!editingAction} onOpenChange={(open) => !open && setEditingAction(null)}>
+                  <DialogContent className="sm:max-w-md w-[95vw] rounded-lg p-6">
+                    <DialogHeader>
+                      <DialogTitle className="font-display">Editar Ação</DialogTitle>
+                      <DialogDescription>
+                        Altere o nome ou as lojas participantes desta campanha. Os limites financeiros e regras do jogo não podem ser alterados após ativados.
+                      </DialogDescription>
+                    </DialogHeader>
+                    {editingAction && (
+                      <form onSubmit={(e) => {
+                        e.preventDefault();
+                        updateMutation.mutate({ id: editingAction.id, payload: { nome: editingAction.nome, unidades: editingAction.unidades } });
+                      }} className="space-y-4 py-4">
+                        <div className="space-y-2">
+                          <Label>Nome da Ação</Label>
+                          <Input value={editingAction.nome} onChange={(e) => setEditingAction({ ...editingAction, nome: e.target.value })} required />
+                        </div>
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between mb-2 mt-4">
+                            <Label>Lojas Participantes <span className="text-red-500">*</span></Label>
+                            <Button type="button" variant="ghost" size="sm" className="h-8 text-xs" onClick={() => {
+                              const allIds = unidades.map((u: any) => u.id) || [];
+                              if (editingAction.unidades.length === allIds.length && allIds.length > 0) {
+                                setEditingAction({ ...editingAction, unidades: [] });
+                              } else {
+                                setEditingAction({ ...editingAction, unidades: allIds });
+                              }
+                            }}>
+                              {editingAction.unidades.length === unidades.length && unidades.length > 0 ? "Desmarcar Todas" : "Selecionar Todas"}
+                            </Button>
+                          </div>
+                          {(!unidades || unidades.length === 0) ? (
+                            <div className="text-sm text-muted-foreground p-3 bg-muted rounded-md text-center">Nenhuma loja cadastrada.</div>
+                          ) : (
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                              {unidades.map((u: any) => (
+                                <button key={u.id} type="button" onClick={() => {
+                                  const list = editingAction.unidades.includes(u.id) ? editingAction.unidades.filter(id => id !== u.id) : [...editingAction.unidades, u.id];
+                                  setEditingAction({ ...editingAction, unidades: list });
+                                }} className={`p-2 border rounded-md text-sm transition-all focus:outline-none flex flex-col items-center justify-center gap-1 min-h-[60px] ${editingAction.unidades.includes(u.id) ? "border-primary bg-primary/10 text-primary-foreground font-medium" : "border-border bg-background hover:bg-muted"}`}>
+                                  <span className="truncate w-full text-center" title={u.nome}>{u.nome}</span>
+                                  {editingAction.unidades.includes(u.id) && <CheckCircle className="h-4 w-4 text-primary shrink-0" />}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <div className="pt-4 flex flex-col-reverse sm:flex-row justify-end gap-2">
+                          <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => setEditingAction(null)}>Cancelar</Button>
+                          <Button type="submit" className="w-full sm:w-auto" disabled={updateMutation.isPending || editingAction.unidades.length === 0}>
+                            {updateMutation.isPending ? "Salvando..." : "Salvar Alterações"}
+                          </Button>
+                        </div>
+                      </form>
+                    )}
+                  </DialogContent>
+                </Dialog>
+              </div>
+            )}
+
+            {/* Form sempre visualizavel para criar mais ações */}
+            <Card>
                 <CardHeader>
                   <CardTitle className="font-display">Criar Nova Ação</CardTitle>
                 </CardHeader>
@@ -188,7 +283,82 @@ export default function AdminPage() {
                         <Label htmlFor="nome">Nome da Ação</Label>
                         <Input id="nome" value={form.nome} onChange={(e) => update("nome", e.target.value)} placeholder="Ex: Campanha de Natal" required />
                       </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <Label>Tipo de Jogo</Label>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-1">
+                          {GAME_TYPE_LIST.map((gt) => (
+                            <button
+                              key={gt.id}
+                              type="button"
+                              onClick={() => setForm((f) => ({ ...f, tipo_jogo: gt.id }))}
+                              className={`flex flex-col items-center gap-1 p-3 rounded-lg border-2 transition-all text-sm ${
+                                form.tipo_jogo === gt.id
+                                  ? "border-primary bg-primary/10 shadow-sm"
+                                  : "border-border bg-muted/30 hover:border-primary/40"
+                              }`}
+                            >
+                              <span className="text-2xl">{gt.emoji}</span>
+                              <span className="font-display font-medium text-foreground">{gt.labelPlural}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      
+                      {/* Lojas Selector */}
+                      <div>
+                        <div className="flex items-center justify-between mb-2 mt-4">
+                          <Label>Lojas Participantes <span className="text-red-500">*</span></Label>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 text-xs"
+                            onClick={() => {
+                              const allIds = unidadesData?.unidades.map((u: any) => u.id) || [];
+                              if (form.unidades?.length === allIds.length && allIds.length > 0) {
+                                setForm((f) => ({ ...f, unidades: [] }));
+                              } else {
+                                setForm((f) => ({ ...f, unidades: allIds }));
+                              }
+                            }}
+                          >
+                            {form.unidades?.length === (unidadesData?.unidades.length || 0) && (unidadesData?.unidades.length || 0) > 0 ? "Desmarcar Todas" : "Selecionar Todas"}
+                          </Button>
+                        </div>
+                        {(!unidadesData?.unidades || unidadesData.unidades.length === 0) ? (
+                          <div className="text-sm text-muted-foreground p-3 bg-muted rounded-md text-center">
+                            Nenhuma loja cadastrada. Adicione lojas na aba "Lojas" primeiro.
+                          </div>
+                        ) : (
+                          <div className="flex flex-wrap gap-2">
+                            {unidadesData.unidades.map((u: any) => {
+                              const isSelected = form.unidades?.includes(u.id);
+                              return (
+                                <button
+                                  key={u.id}
+                                  type="button"
+                                  onClick={() => {
+                                    const current = form.unidades || [];
+                                    const next = current.includes(u.id) 
+                                      ? current.filter(id => id !== u.id)
+                                      : [...current, u.id];
+                                    setForm(f => ({ ...f, unidades: next }));
+                                  }}
+                                  className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${
+                                    isSelected 
+                                      ? "bg-primary text-primary-foreground border-primary"
+                                      : "bg-background text-foreground border-border hover:border-primary/50"
+                                  }`}
+                                >
+                                  {u.nome}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
                         <div>
                           <Label htmlFor="orcamento">Orçamento Total (R$)</Label>
                           <Input id="orcamento" type="number" value={form.orcamento_total} onChange={(e) => update("orcamento_total", e.target.value)} min={1} required />
@@ -214,14 +384,13 @@ export default function AdminPage() {
                           <Input id="valor_maximo" type="number" value={form.valor_maximo} onChange={(e) => update("valor_maximo", e.target.value)} min={1} required />
                         </div>
                       </div>
-                      <Button type="submit" className="w-full" disabled={createMutation.isPending}>
-                        {createMutation.isPending ? "Gerando Balões..." : "🎈 Gerar Balões"}
+                      <Button type="submit" className="w-full" disabled={createMutation.isPending || !form.unidades || form.unidades.length === 0}>
+                        {createMutation.isPending ? "Gerando..." : `${getGameTypeConfig(form.tipo_jogo || "balloon").emoji} Gerar ${getGameTypeConfig(form.tipo_jogo || "balloon").labelPlural}`}
                       </Button>
                     </form>
                   )}
                 </CardContent>
               </Card>
-            )}
           </TabsContent>
 
           <TabsContent value="history" className="space-y-6">
@@ -364,7 +533,7 @@ function ActionHistoryTab() {
             </div>
           )}
           <CardHeader>
-            <CardTitle>{act.nome}</CardTitle>
+            <CardTitle>{getGameTypeConfig(act.tipo_jogo).emoji} {act.nome}</CardTitle>
             <CardDescription>Criada em {new Date(act.created_at).toLocaleDateString("pt-BR")}</CardDescription>
           </CardHeader>
           <CardContent>

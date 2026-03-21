@@ -62,6 +62,7 @@ async function setupDatabase() {
     CREATE TABLE IF NOT EXISTS actions (
       id TEXT PRIMARY KEY,
       nome TEXT NOT NULL,
+      tipo_jogo TEXT NOT NULL DEFAULT 'balloon',
       orcamento_total NUMERIC NOT NULL,
       qtd_baloes INTEGER NOT NULL,
       qtd_premiados INTEGER NOT NULL,
@@ -109,6 +110,24 @@ async function setupDatabase() {
     try {
         await db.run("ALTER TABLE balloons ADD COLUMN cliente TEXT;");
     } catch (e) { }
+    // Alter table if tipo_jogo column does not exist (for backward compatibility)
+    try {
+        await db.run("ALTER TABLE actions ADD COLUMN tipo_jogo TEXT DEFAULT 'balloon';");
+    } catch (e) { }
+    // Create action_unidades table for N:N relationship between campaigns and stores
+    try {
+        await db.run(`
+            CREATE TABLE IF NOT EXISTS action_unidades (
+                action_id TEXT,
+                unidade_id TEXT,
+                PRIMARY KEY (action_id, unidade_id),
+                FOREIGN KEY (action_id) REFERENCES actions (id) ON DELETE CASCADE,
+                FOREIGN KEY (unidade_id) REFERENCES unidades (id) ON DELETE CASCADE
+            )
+        `);
+    } catch (e) {
+        console.error("Error creating action_unidades table:", e);
+    }
 
     console.log('SQLite database initialized.');
 
@@ -162,17 +181,20 @@ const authMiddleware = (req, res, next) => {
 // POST /create-action
 app.post('/api/create-action', authMiddleware, async (req, res) => {
     try {
-        const { nome, orcamento_total, qtd_baloes, qtd_premiados, valor_multiplo, valor_minimo, valor_maximo } = req.body;
+        const { nome, tipo_jogo, orcamento_total, qtd_baloes, qtd_premiados, valor_multiplo, valor_minimo, valor_maximo, unidades } = req.body;
 
         if (qtd_premiados > qtd_baloes) return res.status(400).json({ error: "Quantidade de premiados não pode ser maior que total de balões" });
         if (qtd_premiados * valor_minimo > orcamento_total) return res.status(400).json({ error: "Orçamento insuficiente para os valores mínimos" });
         if (valor_minimo > valor_maximo) return res.status(400).json({ error: "Valor mínimo não pode ser maior que valor máximo" });
 
+        const validTypes = ['balloon', 'envelope', 'heart', 'chest'];
+        const tipoJogo = validTypes.includes(tipo_jogo) ? tipo_jogo : 'balloon';
+
         const actionId = crypto.randomUUID();
         await db.run(
-            `INSERT INTO actions (id, nome, orcamento_total, qtd_baloes, qtd_premiados, valor_multiplo, valor_minimo, valor_maximo)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-            [actionId, nome, orcamento_total, qtd_baloes, qtd_premiados, valor_multiplo, valor_minimo, valor_maximo]
+            `INSERT INTO actions (id, nome, tipo_jogo, orcamento_total, qtd_baloes, qtd_premiados, valor_multiplo, valor_minimo, valor_maximo)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [actionId, nome, tipoJogo, orcamento_total, qtd_baloes, qtd_premiados, valor_multiplo, valor_minimo, valor_maximo]
         );
 
         const action = await db.get("SELECT * FROM actions WHERE id = ?", [actionId]);
@@ -208,7 +230,113 @@ app.post('/api/create-action', authMiddleware, async (req, res) => {
         }
         await stmt.finalize();
 
-        res.json({ action, balloons_created: qtd_baloes });
+        // Save selected units
+        if (Array.isArray(unidades) && unidades.length > 0) {
+            const stmtUnidades = await db.prepare(
+                `INSERT INTO action_unidades (action_id, unidade_id) VALUES (?, ?)`
+            );
+            for (const unidadeId of unidades) {
+                await stmtUnidades.run(actionId, unidadeId);
+            }
+            await stmtUnidades.finalize();
+        }
+
+        res.json({ action, balloons_created: qtd_baloes, unidades_vinculadas: unidades?.length || 0 });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: err.message });
+    }
+});
+// PUT /actions/:id (Update name and restricted units)
+app.put('/api/actions/:id', authMiddleware, async (req, res) => {
+    const { id } = req.params;
+    const { nome, unidades } = req.body;
+
+    if (!nome) {
+        return res.status(400).json({ error: 'Nome não informado' });
+    }
+
+    try {
+        const action = await db.get("SELECT * FROM actions WHERE id = ?", [id]);
+        if (!action) return res.status(404).json({ error: 'Ação não encontrada' });
+
+        await db.run("UPDATE actions SET nome = ? WHERE id = ?", [nome, id]);
+
+        await db.run("DELETE FROM action_unidades WHERE action_id = ?", [id]);
+
+        if (Array.isArray(unidades) && unidades.length > 0) {
+            const stmtUnidades = await db.prepare(
+                `INSERT INTO action_unidades (action_id, unidade_id) VALUES (?, ?)`
+            );
+            for (const unidadeId of unidades) {
+                await stmtUnidades.run(id, unidadeId);
+            }
+            await stmtUnidades.finalize();
+        }
+
+        res.json({ success: true, message: 'Ação atualizada com sucesso' });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET /active-actions
+app.get('/api/active-actions', async (req, res) => {
+    try {
+        const actions = await db.all("SELECT * FROM actions WHERE status = 'active' ORDER BY created_at DESC");
+
+        if (!actions || actions.length === 0) return res.json({ actions: [] });
+
+        const activeActionsData = [];
+
+        for (const action of actions) {
+            // Fetch allowed units for this action
+            let allowedUnidades = [];
+            const actionUnidades = await db.all(
+                `SELECT u.* FROM unidades u 
+                 JOIN action_unidades au ON u.id = au.unidade_id 
+                 WHERE au.action_id = ?`, 
+                [action.id]
+            );
+            
+            if (actionUnidades.length > 0) {
+                allowedUnidades = actionUnidades;
+            } else {
+                const allUnidades = await db.all("SELECT * FROM unidades ORDER BY nome");
+                allowedUnidades = allUnidades;
+            }
+
+            const balloons = await db.all(
+                "SELECT valor, premiado, estourado FROM balloons WHERE action_id = ?", [action.id]
+            );
+
+            const totalBaloes = balloons.length;
+            const estouradosCount = balloons.filter(b => b.estourado).length;
+            let totalDistribuido = 0;
+
+            balloons.forEach(b => {
+                if (b.estourado && b.premiado) {
+                    totalDistribuido += Number(b.valor);
+                }
+            });
+
+            const stats = {
+                total_baloes: totalBaloes,
+                estourados: estouradosCount,
+                distribuido_grana: totalDistribuido
+            };
+
+            activeActionsData.push({
+                action: {
+                    ...action,
+                    unidades: allowedUnidades
+                },
+                stats
+            });
+        }
+
+        res.json({ actions: activeActionsData });
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: err.message });
@@ -223,6 +351,23 @@ app.get('/api/active-action', async (req, res) => {
         );
 
         if (!action) return res.json({ action: null });
+
+        // Fetch allowed units for this action
+        let allowedUnidades = [];
+        const actionUnidades = await db.all(
+            `SELECT u.* FROM unidades u 
+             JOIN action_unidades au ON u.id = au.unidade_id 
+             WHERE au.action_id = ?`, 
+            [action.id]
+        );
+        
+        if (actionUnidades.length > 0) {
+            allowedUnidades = actionUnidades;
+        } else {
+            // Legacy campaigns: if no units specified, allow all
+            const allUnidades = await db.all("SELECT * FROM unidades ORDER BY nome");
+            allowedUnidades = allUnidades;
+        }
 
         const balloons = await db.all(
             "SELECT valor, premiado, estourado FROM balloons WHERE action_id = ?", [action.id]
@@ -241,11 +386,15 @@ app.get('/api/active-action', async (req, res) => {
         const stats = {
             total_baloes: totalBaloes,
             estourados: estouradosCount,
-            total_distribuido: totalDistribuido,
-            orcamento_restante: action.orcamento_total - totalDistribuido,
+            distribuido_grana: totalDistribuido
         };
 
-        res.json({ action, stats });
+        const responseAction = {
+            ...action,
+            unidades: allowedUnidades
+        };
+
+        res.json({ action: responseAction, stats });
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: err.message });

@@ -1,5 +1,9 @@
 import { motion } from "framer-motion";
 import type { Balloon } from "@/lib/api";
+import type { GameType } from "@/lib/gameTypes";
+import EnvelopeItem from "@/components/game-items/EnvelopeItem";
+import HeartItem from "@/components/game-items/HeartItem";
+import ChestItem from "@/components/game-items/ChestItem";
 
 const BALLOON_COLORS = [
   "bg-balloon-red",
@@ -12,15 +16,30 @@ const BALLOON_COLORS = [
   "bg-balloon-teal",
 ];
 
-interface BalloonItemProps {
+interface GameItemProps {
   balloon: Balloon;
   index: number;
   onPop: () => void;
   isPopping: boolean;
+  gameType?: GameType;
 }
 
-export default function BalloonItem({ balloon, index, onPop, isPopping }: BalloonItemProps) {
-  // Use a simple hash of the UUID to pick a consistent pseudo-random color
+export default function GameItem({ balloon, index, onPop, isPopping, gameType = "balloon" }: GameItemProps) {
+  switch (gameType) {
+    case "envelope":
+      return <EnvelopeItem balloon={balloon} index={index} onPop={onPop} isPopping={isPopping} />;
+    case "heart":
+      return <HeartItem balloon={balloon} index={index} onPop={onPop} isPopping={isPopping} />;
+    case "chest":
+      return <ChestItem balloon={balloon} index={index} onPop={onPop} isPopping={isPopping} />;
+    case "balloon":
+    default:
+      return <BalloonItemVisual balloon={balloon} index={index} onPop={onPop} isPopping={isPopping} />;
+  }
+}
+
+// Original balloon visual (extracted from the old BalloonItem)
+function BalloonItemVisual({ balloon, index, onPop, isPopping }: Omit<GameItemProps, "gameType">) {
   const hash = balloon.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
   const color = BALLOON_COLORS[hash % BALLOON_COLORS.length];
 

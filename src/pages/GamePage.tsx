@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getActiveAction, getBalloons, popBalloon, validateBudget, getUnidades, type Balloon, type Unidade } from "@/lib/api";
+import { getActiveActions, getBalloons, popBalloon, validateBudget, type Balloon, type Unidade } from "@/lib/api";
 import { motion, AnimatePresence } from "framer-motion";
 import { PartyPopper, Frown, Search, CheckCircle, XCircle, Loader2 } from "lucide-react";
-import BalloonItem from "@/components/BalloonItem";
+import GameItem from "@/components/BalloonItem";
+import { getGameTypeConfig, type GameType } from "@/lib/gameTypes";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -32,17 +33,22 @@ export default function GamePage() {
     vendedor: null,
   });
 
-  const { data: actionData, isLoading: actionLoading } = useQuery({
-    queryKey: ["active-action-game"],
-    queryFn: getActiveAction,
+  const [selectedActionId, setSelectedActionId] = useState<string | null>(null);
+
+  const { data: actionsData, isLoading: actionLoading } = useQuery({
+    queryKey: ["active-actions-game"],
+    queryFn: getActiveActions,
   });
 
-  const { data: unidadesData } = useQuery({
-    queryKey: ["unidades"],
-    queryFn: getUnidades,
-  });
+  const actionsList = actionsData?.actions || [];
+  const actionObj = selectedActionId 
+    ? actionsList.find((a: any) => a.action.id === selectedActionId)
+    : (actionsList.length === 1 ? actionsList[0] : null);
 
-  const actionId = actionData?.action?.id;
+  const action = actionObj?.action || null;
+  const actionId = action?.id;
+  const gameType = (action?.tipo_jogo || 'balloon') as GameType;
+  const gameConfig = getGameTypeConfig(gameType);
 
   const { data: balloonsData, isLoading: balloonsLoading } = useQuery({
     queryKey: ["balloons", actionId],
@@ -111,7 +117,7 @@ export default function GamePage() {
     );
   }
 
-  if (!actionData?.action) {
+  if (actionsList.length === 0) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="text-center">
@@ -123,30 +129,81 @@ export default function GamePage() {
     );
   }
 
+  if (!action) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background p-6">
+        <div className="w-full max-w-4xl space-y-8">
+          <div className="text-center">
+            <h1 className="font-display text-4xl font-bold text-foreground">Escolha uma Campanha</h1>
+            <p className="text-muted-foreground mt-2">Clique em uma das campanhas ativas disponíveis para jogar.</p>
+          </div>
+          <div className="flex flex-wrap justify-center gap-6">
+            {actionsList.map(({ action: a }: any) => {
+              const gtConfig = getGameTypeConfig(a.tipo_jogo || 'balloon');
+              return (
+                <button
+                  key={a.id}
+                  onClick={() => setSelectedActionId(a.id)}
+                  className="w-full sm:w-[320px] lg:w-[350px] flex flex-col items-center justify-center bg-card p-8 rounded-xl border-2 border-border border-b-4 hover:border-primary hover:bg-muted/50 transition-all hover:-translate-y-1 active:translate-y-0 text-center"
+                >
+                  <span className="text-6xl mb-4 drop-shadow-sm">{gtConfig.emoji}</span>
+                  <h3 className="font-display font-bold text-xl w-full">{a.nome}</h3>
+                  {a.unidades && a.unidades.length > 0 ? (
+                    <p className="text-xs text-muted-foreground mt-4 font-medium">
+                      Lojas: {a.unidades.map((u: any) => u.nome).join(', ')}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground mt-4 border border-dashed rounded px-2 py-0.5 border-muted-foreground/30">
+                      Todas as lojas permitidas
+                    </p>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const balloons = balloonsData?.balloons || [];
-  const unidades = unidadesData?.unidades || [];
+  const unidades = action?.unidades || [];
   const canPop = budgetValidation?.approved === true;
 
   return (
     <div className="min-h-screen bg-background relative overflow-hidden">
       <header className="border-b border-border bg-card px-4 sm:px-6 py-4">
-        <div className="mx-auto max-w-6xl text-center">
-          <h1 className="font-display text-2xl sm:text-3xl font-bold text-foreground">
-            🎈 {actionData.action.nome}
-          </h1>
-          <p className="text-muted-foreground mt-1">Selecione a unidade e informe o código do orçamento</p>
+        <div className="mx-auto max-w-6xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+          {actionsList.length > 1 && (
+            <Button variant="ghost" size="sm" onClick={() => setSelectedActionId(null)} className="absolute left-4 top-4 md:static">
+              &larr; Voltar
+            </Button>
+          )}
+          <div className="text-center mx-auto">
+            <h1 className="font-display text-2xl sm:text-3xl font-bold text-foreground">
+              {gameConfig.emoji} {action.nome}
+            </h1>
+            <p className="text-muted-foreground mt-1">Selecione a unidade e informe o código do orçamento</p>
+          </div>
+          {/* Spacer to keep center alignment when back button is present */}
+          {actionsList.length > 1 && <div className="hidden md:block w-[76px]" />}
         </div>
       </header>
 
       <Dialog open={!canPop}>
         <DialogContent className="w-[95vw] sm:max-w-md rounded-xl md:w-full [&>button]:hidden" onInteractOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
-          <DialogHeader>
-            <DialogTitle className="font-display flex items-center gap-2 text-2xl">
+          <DialogHeader className="relative">
+            {actionsList.length > 1 && (
+              <Button type="button" variant="outline" size="sm" onClick={() => setSelectedActionId(null)} className="absolute -top-2 right-0 text-muted-foreground hover:text-foreground">
+                Trocar Jogo
+              </Button>
+            )}
+            <DialogTitle className="font-display flex items-center gap-2 text-2xl pt-2">
               <PartyPopper className="h-6 w-6 text-primary" />
               Validar Orçamento
             </DialogTitle>
             <DialogDescription>
-              Acesso bloqueado. Informe a unidade e o código do orçamento aprovado para participar do Estoura Balão.
+              Acesso bloqueado. Informe a unidade e o código do orçamento aprovado para participar.
             </DialogDescription>
           </DialogHeader>
 
@@ -191,9 +248,9 @@ export default function GamePage() {
                 <div className="text-sm text-destructive">
                   <p><strong>Status: {budgetValidation.statusPlano}</strong></p>
                   {budgetValidation.statusPlano === "Orçamento já utilizado" ? (
-                    <p>Este orçamento já estourou o limite de balões disponíveis (1).</p>
+                    <p>Este orçamento já utilizou seu limite de {gameConfig.itemNamePlural} disponíveis (1).</p>
                   ) : (
-                    <p>Apenas orçamentos com status "Aprovado" podem estourar balões.</p>
+                    <p>Apenas orçamentos com status "Aprovado" podem participar.</p>
                   )}
                 </div>
               </div>
@@ -238,18 +295,19 @@ export default function GamePage() {
             {!canPop && (
               <div className="text-center mb-4">
                 <p className="text-sm text-muted-foreground">
-                  🔒 Valide um orçamento aprovado para desbloquear os balões
+                  🔒 Valide um orçamento aprovado para desbloquear os {gameConfig.itemNamePlural}
                 </p>
               </div>
             )}
             <div className={`flex flex-wrap justify-center gap-4 max-w-5xl mx-auto ${!canPop ? "opacity-50 pointer-events-none" : ""}`}>
               {balloons.map((balloon, i) => (
-                <BalloonItem
+                <GameItem
                   key={balloon.id}
                   balloon={balloon}
                   index={i}
                   onPop={() => popMutation.mutate(balloon.id)}
                   isPopping={popMutation.isPending}
+                  gameType={gameType}
                 />
               ))}
             </div>
@@ -305,7 +363,7 @@ export default function GamePage() {
                       <p className="text-xs text-muted-foreground">Vendedor: {poppedResult.vendedor}</p>
                     </div>
                   )}
-                  <p className="text-muted-foreground">Tente outro balão 😊</p>
+                  <p className="text-muted-foreground">Tente outro {gameConfig.itemName} 😊</p>
                 </>
               )}
             </motion.div>

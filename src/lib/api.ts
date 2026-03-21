@@ -2,17 +2,20 @@
 
 export interface ActionPayload {
   nome: string;
+  tipo_jogo: string;
   orcamento_total: number;
   qtd_baloes: number;
   qtd_premiados: number;
   valor_multiplo: number;
   valor_minimo: number;
   valor_maximo: number;
+  unidades?: string[]; // Array of Unidade IDs
 }
 
 export interface Action {
   id: string;
   nome: string;
+  tipo_jogo: string;
   orcamento_total: number;
   qtd_baloes: number;
   qtd_premiados: number;
@@ -21,6 +24,7 @@ export interface Action {
   valor_maximo: number;
   status: string;
   created_at: string;
+  unidades?: Unidade[]; // The API returns full Unidade objects for active-action
 }
 
 export interface ActionStats {
@@ -74,8 +78,16 @@ export async function createAction(payload: ActionPayload) {
   return fetchApi("create-action", "POST", payload);
 }
 
+export async function updateAction(id: string, payload: { nome: string; unidades: string[] }) {
+  return fetchApi(`actions/${id}`, "PUT", payload);
+}
+
 export async function getActiveAction(): Promise<{ action: Action | null; stats?: ActionStats }> {
   return fetchApi("active-action", "GET");
+}
+
+export async function getActiveActions(): Promise<{ actions: { action: Action; stats: ActionStats }[] }> {
+  return fetchApi("active-actions", "GET");
 }
 
 export async function getBalloons(actionId: string): Promise<{ balloons: Balloon[] }> {
