@@ -159,13 +159,28 @@ function generateBalloonValues(
     valorMinimo,
     valorMaximo
 ) {
+    // Force numeric types
+    orcamentoTotal = Number(orcamentoTotal);
+    qtdPremiados = Number(qtdPremiados);
+    valorMultiplo = Number(valorMultiplo);
+    valorMinimo = Number(valorMinimo);
+    valorMaximo = Number(valorMaximo);
+
     const values = new Array(qtdPremiados).fill(valorMinimo);
-    let saldoRestante = orcamentoTotal - qtdPremiados * valorMinimo;
+    let saldoRestante = orcamentoTotal - (qtdPremiados * valorMinimo);
+
+    // --- 1. Guaranteed Top Prize (if budget allows) ---
+    // If we have enough left to take at least one balloon to its max, do it.
+    if (saldoRestante >= (valorMaximo - valorMinimo)) {
+        values[0] = valorMaximo;
+        saldoRestante -= (valorMaximo - valorMinimo);
+    }
 
     let attempts = 0;
     const maxAttempts = 10000;
 
-    while (saldoRestante > 0 && attempts < maxAttempts) {
+    // --- 2. Random Distribution of the rest ---
+    while (saldoRestante >= valorMultiplo && attempts < maxAttempts) {
         attempts++;
         const idx = Math.floor(Math.random() * qtdPremiados);
         if (values[idx] + valorMultiplo <= valorMaximo) {
@@ -173,6 +188,21 @@ function generateBalloonValues(
             saldoRestante -= valorMultiplo;
         }
     }
+
+    // --- Distribution of the small remainder (to reach 100% budget) ---
+    if (saldoRestante > 0) {
+        // Try to add the remainder to the last changed balloon or any balloon that can take it
+        for (let i = values.length - 1; i >= 0; i--) {
+            if (values[i] + saldoRestante <= valorMaximo) {
+                values[i] += saldoRestante;
+                saldoRestante = 0;
+                break;
+            }
+        }
+    }
+
+    const total = values.reduce((a, b) => a + b, 0);
+    console.log(`[Balloon Gen] Total: ${total} | Budget: ${orcamentoTotal} | Remaining: ${saldoRestante}`);
 
     return values;
 }

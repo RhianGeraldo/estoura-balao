@@ -116,8 +116,41 @@ export default function AdminPage() {
 
   const update = (field: keyof ActionPayload, value: string) => {
     const numFields: (keyof ActionPayload)[] = ["orcamento_total", "qtd_baloes", "qtd_premiados", "valor_multiplo", "valor_minimo", "valor_maximo"];
-    setForm((f) => ({ ...f, [field]: numFields.includes(field) ? Number(value) : value }));
+    if (numFields.includes(field)) {
+      // Allow empty string so user can clear the input
+      if (value === "") {
+        setForm((f) => ({ ...f, [field]: "" as unknown as number }));
+      } else {
+        const val = Number(value);
+        if (!isNaN(val)) {
+          setForm((f) => ({ ...f, [field]: val }));
+        }
+      }
+    } else {
+      setForm((f) => ({ ...f, [field]: value }));
+    }
   };
+
+  const budgetStats = (() => {
+    const totalBase = form.qtd_premiados * form.valor_minimo;
+    const disponivel = form.orcamento_total - totalBase;
+    const multiplo = Math.max(1, form.valor_multiplo || 1);
+    const sobra = disponivel > 0 ? disponivel % multiplo : 0;
+    
+    // Sugestão de múltiplo para ser 100% exato (procurando o maior divisor comum entre os "bonitos")
+    let sugestao = 1;
+    if (disponivel > 0) {
+      const common = [100, 50, 25, 20, 10, 5, 2, 1];
+      for (const m of common) {
+        if (disponivel % m === 0) {
+          sugestao = m;
+          break;
+        }
+      }
+    }
+    
+    return { disponivel, sobra, sugestao };
+  })();
 
 
 
@@ -147,7 +180,7 @@ export default function AdminPage() {
           <TabsList className="flex flex-col sm:flex-row w-full max-w-3xl mx-auto h-auto p-1 bg-muted rounded-lg">
             <TabsTrigger value="dashboard" className="w-full sm:w-auto">Ações Ativas</TabsTrigger>
             <TabsTrigger value="history" className="w-full sm:w-auto">Histórico</TabsTrigger>
-            <TabsTrigger value="unidades" className="w-full sm:w-auto">Lojas</TabsTrigger>
+            <TabsTrigger value="unidades" className="w-full sm:w-auto">Unidades</TabsTrigger>
             <TabsTrigger value="users" className="w-full sm:w-auto">Admins</TabsTrigger>
           </TabsList>
 
@@ -201,7 +234,7 @@ export default function AdminPage() {
                       </CardTitle>
                       {action.unidades && action.unidades.length > 0 && (
                         <CardDescription>
-                          Lojas participantes: {action.unidades.map(u => u.nome).join(', ')}
+                          Unidades participantes: {action.unidades.map(u => u.nome).join(', ')}
                         </CardDescription>
                       )}
                     </CardHeader>
@@ -240,7 +273,7 @@ export default function AdminPage() {
                     <DialogHeader>
                       <DialogTitle className="font-display">Editar Ação</DialogTitle>
                       <DialogDescription>
-                        Altere o nome ou as lojas participantes desta campanha. Os limites financeiros e regras do jogo não podem ser alterados após ativados.
+                        Altere o nome ou as unidades participantes desta campanha. Os limites financeiros e regras do jogo não podem ser alterados após ativados.
                       </DialogDescription>
                     </DialogHeader>
                     {editingAction && (
@@ -254,7 +287,7 @@ export default function AdminPage() {
                         </div>
                         <div className="space-y-2">
                           <div className="flex items-center justify-between mb-2 mt-4">
-                            <Label>Lojas Participantes <span className="text-red-500">*</span></Label>
+                            <Label>Unidades Participantes <span className="text-red-500">*</span></Label>
                             <Button type="button" variant="ghost" size="sm" className="h-8 text-xs" onClick={() => {
                               const allIds = unidades.map((u: any) => u.id) || [];
                               if (editingAction.unidades.length === allIds.length && allIds.length > 0) {
@@ -267,7 +300,7 @@ export default function AdminPage() {
                             </Button>
                           </div>
                           {(!unidades || unidades.length === 0) ? (
-                            <div className="text-sm text-muted-foreground p-3 bg-muted rounded-md text-center">Nenhuma loja cadastrada.</div>
+                            <div className="text-sm text-muted-foreground p-3 bg-muted rounded-md text-center">Nenhuma unidade cadastrada.</div>
                           ) : (
                             <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                               {unidades.map((u: any) => (
@@ -309,6 +342,67 @@ export default function AdminPage() {
                         <Label htmlFor="nome">Nome da Ação</Label>
                         <Input id="nome" value={form.nome} onChange={(e) => update("nome", e.target.value)} placeholder="Ex: Campanha de Natal" required />
                       </div>
+
+                      {/* Configurações Rápidas (Templates) */}
+                      <div className="space-y-2 mt-4">
+                        <Label className="text-xs text-muted-foreground uppercase tracking-widest font-bold">Sugestões de Configuração</Label>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                          <Button 
+                            type="button" 
+                            variant="outline" 
+                            size="sm" 
+                            className="flex flex-col h-auto py-2 items-start gap-1 border-primary/20 hover:bg-primary/5"
+                            onClick={() => setForm({
+                              ...form,
+                              orcamento_total: 250,
+                              qtd_baloes: 30,
+                              qtd_premiados: 10,
+                              valor_multiplo: 10,
+                              valor_minimo: 5,
+                              valor_maximo: 50
+                            })}
+                          >
+                            <span className="font-bold flex items-center gap-1">💰 Econômico</span>
+                            <span className="text-[10px] text-muted-foreground leading-tight text-left">Orç. R$250, Max R$50,<br/>Menos premiados.</span>
+                          </Button>
+                          <Button 
+                            type="button" 
+                            variant="outline" 
+                            size="sm" 
+                            className="flex flex-col h-auto py-2 items-start gap-1 border-primary/20 hover:bg-primary/5"
+                            onClick={() => setForm({
+                              ...form,
+                              orcamento_total: 500,
+                              qtd_baloes: 50,
+                              qtd_premiados: 20,
+                              valor_multiplo: 5,
+                              valor_minimo: 10,
+                              valor_maximo: 100
+                            })}
+                          >
+                            <span className="font-bold flex items-center gap-1">⚖️ Balanceado</span>
+                            <span className="text-[10px] text-muted-foreground leading-tight text-left">Orç. R$500, Max R$100,<br/>Mais chances.</span>
+                          </Button>
+                          <Button 
+                            type="button" 
+                            variant="outline" 
+                            size="sm" 
+                            className="flex flex-col h-auto py-2 items-start gap-1 border-primary/20 hover:bg-primary/5"
+                            onClick={() => setForm({
+                              ...form,
+                              orcamento_total: 1000,
+                              qtd_baloes: 100,
+                              qtd_premiados: 25,
+                              valor_multiplo: 20,
+                              valor_minimo: 20,
+                              valor_maximo: 200
+                            })}
+                          >
+                            <span className="font-bold flex items-center gap-1">⭐ Premium</span>
+                            <span className="text-[10px] text-muted-foreground leading-tight text-left">Orç. R$1000, Max R$200,<br/>Prêmios altos.</span>
+                          </Button>
+                        </div>
+                      </div>
                       <div>
                         <Label>Tipo de Jogo</Label>
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-1">
@@ -330,10 +424,10 @@ export default function AdminPage() {
                         </div>
                       </div>
                       
-                      {/* Lojas Selector */}
-                      <div>
-                        <div className="flex items-center justify-between mb-2 mt-4">
-                          <Label>Lojas Participantes <span className="text-red-500">*</span></Label>
+                      {/* Unidades Selector */}
+                      <div className="space-y-3 mt-4">
+                        <div className="flex items-center justify-between">
+                          <Label>Unidades Participantes <span className="text-red-500">*</span></Label>
                           <Button
                             type="button"
                             variant="ghost"
@@ -353,7 +447,7 @@ export default function AdminPage() {
                         </div>
                         {(!unidadesData?.unidades || unidadesData.unidades.length === 0) ? (
                           <div className="text-sm text-muted-foreground p-3 bg-muted rounded-md text-center">
-                            Nenhuma loja cadastrada. Adicione lojas na aba "Lojas" primeiro.
+                            Nenhuma unidade cadastrada. Adicione unidades na aba "Unidades" primeiro.
                           </div>
                         ) : (
                           <div className="flex flex-wrap gap-2">
@@ -387,28 +481,69 @@ export default function AdminPage() {
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
                         <div>
                           <Label htmlFor="orcamento">Orçamento Total (R$)</Label>
-                          <Input id="orcamento" type="number" value={form.orcamento_total} onChange={(e) => update("orcamento_total", e.target.value)} min={1} required />
+                          <Input id="orcamento" type="number" value={form.orcamento_total ?? ""} onChange={(e) => update("orcamento_total", e.target.value)} min={1} required />
                         </div>
                         <div>
                           <Label htmlFor="qtd_baloes">Qtd. {getGameTypeConfig(form.tipo_jogo || "balloon").labelPlural}</Label>
-                          <Input id="qtd_baloes" type="number" value={form.qtd_baloes} onChange={(e) => update("qtd_baloes", e.target.value)} min={1} required />
+                          <Input id="qtd_baloes" type="number" value={form.qtd_baloes ?? ""} onChange={(e) => update("qtd_baloes", e.target.value)} min={1} required />
                         </div>
                         <div>
                           <Label htmlFor="qtd_premiados">Qtd. Premiados</Label>
-                          <Input id="qtd_premiados" type="number" value={form.qtd_premiados} onChange={(e) => update("qtd_premiados", e.target.value)} min={1} required />
+                          <Input id="qtd_premiados" type="number" value={form.qtd_premiados ?? ""} onChange={(e) => update("qtd_premiados", e.target.value)} min={1} required />
                         </div>
                         <div>
                           <Label htmlFor="valor_multiplo">Valor Múltiplo (R$)</Label>
-                          <Input id="valor_multiplo" type="number" value={form.valor_multiplo} onChange={(e) => update("valor_multiplo", e.target.value)} min={1} required />
+                          <Input id="valor_multiplo" type="number" value={form.valor_multiplo ?? ""} onChange={(e) => update("valor_multiplo", e.target.value)} min={1} required />
                         </div>
                         <div>
                           <Label htmlFor="valor_minimo">Valor Mínimo (R$)</Label>
-                          <Input id="valor_minimo" type="number" value={form.valor_minimo} onChange={(e) => update("valor_minimo", e.target.value)} min={1} required />
+                          <Input id="valor_minimo" type="number" value={form.valor_minimo ?? ""} onChange={(e) => update("valor_minimo", e.target.value)} min={1} required />
                         </div>
                         <div>
                           <Label htmlFor="valor_maximo">Valor Máximo (R$)</Label>
-                          <Input id="valor_maximo" type="number" value={form.valor_maximo} onChange={(e) => update("valor_maximo", e.target.value)} min={1} required />
+                          <Input id="valor_maximo" type="number" value={form.valor_maximo ?? ""} onChange={(e) => update("valor_maximo", e.target.value)} min={1} required />
                         </div>
+                      </div>
+
+                      {/* Budget Utilization Helper */}
+                      <div className={`p-4 rounded-lg border-2 mt-4 transition-all ${budgetStats.sobra === 0 ? 'bg-primary/5 border-primary/20' : 'bg-amber-500/5 border-amber-500/20'}`}>
+                        <div className="flex items-center justify-between mb-2">
+                          <h4 className="text-sm font-bold flex items-center gap-2">
+                            <DollarSign className="h-4 w-4" />
+                            Resumo da Distribuição
+                          </h4>
+                          {budgetStats.sobra === 0 ? (
+                            <span className="text-[10px] bg-primary/20 text-primary px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">100% Exato</span>
+                          ) : (
+                            <span className="text-[10px] bg-amber-500/20 text-amber-600 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">Ajuste Sugerido</span>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-2 gap-4 text-sm">
+                          <div>
+                            <p className="text-muted-foreground text-xs">Total Distribuído</p>
+                            <p className="font-bold text-foreground">R$ {(form.orcamento_total - budgetStats.sobra).toFixed(2)}</p>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground text-xs">Sobra do Orçamento</p>
+                            <p className={`font-bold ${budgetStats.sobra > 0 ? 'text-amber-600' : 'text-primary'}`}>R$ {budgetStats.sobra.toFixed(2)}</p>
+                          </div>
+                        </div>
+                        {budgetStats.sobra > 0 && (
+                          <div className="mt-3 pt-3 border-t border-amber-500/10">
+                            <p className="text-xs text-muted-foreground mb-2">
+                              Para usar 100% do orçamento, sugerimos usar um múltiplo de <b>R$ {budgetStats.sugestao}</b>.
+                            </p>
+                            <Button 
+                              type="button" 
+                              variant="outline" 
+                              size="sm" 
+                              className="h-7 text-xs border-amber-500/30 hover:bg-amber-500/10 text-amber-700"
+                              onClick={() => setForm(f => ({ ...f, valor_multiplo: budgetStats.sugestao }))}
+                            >
+                              Aplicar Sugestão (R$ {budgetStats.sugestao})
+                            </Button>
+                          </div>
+                        )}
                       </div>
                       <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 mt-6">
                         <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => setIsCreateModalOpen(false)}>Cancelar</Button>

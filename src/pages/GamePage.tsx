@@ -150,11 +150,11 @@ export default function GamePage() {
                   <h3 className="font-display font-bold text-xl w-full">{a.nome}</h3>
                   {a.unidades && a.unidades.length > 0 ? (
                     <p className="text-xs text-muted-foreground mt-4 font-medium">
-                      Lojas: {a.unidades.map((u: any) => u.nome).join(', ')}
+                      Unidades: {a.unidades.map((u: any) => u.nome).join(', ')}
                     </p>
                   ) : (
                     <p className="text-xs text-muted-foreground mt-4 border border-dashed rounded px-2 py-0.5 border-muted-foreground/30">
-                      Todas as lojas permitidas
+                      Todas as unidades permitidas
                     </p>
                   )}
                 </button>
