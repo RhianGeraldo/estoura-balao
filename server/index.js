@@ -69,6 +69,7 @@ async function setupDatabase() {
       valor_multiplo NUMERIC NOT NULL,
       valor_minimo NUMERIC NOT NULL,
       valor_maximo NUMERIC NOT NULL,
+      venda_minima NUMERIC NOT NULL DEFAULT 0,
       status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'closed')),
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
@@ -114,6 +115,10 @@ async function setupDatabase() {
     // Alter table if tipo_jogo column does not exist (for backward compatibility)
     try {
         await db.run("ALTER TABLE actions ADD COLUMN tipo_jogo TEXT DEFAULT 'balloon';");
+    } catch (e) { }
+    // Add venda_minima to actions
+    try {
+        await db.run("ALTER TABLE actions ADD COLUMN venda_minima NUMERIC NOT NULL DEFAULT 0;");
     } catch (e) { }
     // Add nome to users and created_by to actions
     try {
@@ -224,7 +229,7 @@ const authMiddleware = (req, res, next) => {
 // POST /create-action
 app.post('/api/create-action', authMiddleware, async (req, res) => {
     try {
-        const { nome, tipo_jogo, orcamento_total, qtd_baloes, qtd_premiados, valor_multiplo, valor_minimo, valor_maximo, unidades } = req.body;
+        const { nome, tipo_jogo, orcamento_total, qtd_baloes, qtd_premiados, valor_multiplo, valor_minimo, valor_maximo, venda_minima, unidades } = req.body;
 
         if (qtd_premiados > qtd_baloes) return res.status(400).json({ error: "Quantidade de premiados não pode ser maior que total de balões" });
         if (qtd_premiados * valor_minimo > orcamento_total) return res.status(400).json({ error: "Orçamento insuficiente para os valores mínimos" });
@@ -234,10 +239,11 @@ app.post('/api/create-action', authMiddleware, async (req, res) => {
         const tipoJogo = validTypes.includes(tipo_jogo) ? tipo_jogo : 'balloon';
 
         const actionId = crypto.randomUUID();
+        const vMinima = venda_minima ? Number(venda_minima) : 0;
         await db.run(
-            `INSERT INTO actions (id, nome, tipo_jogo, orcamento_total, qtd_baloes, qtd_premiados, valor_multiplo, valor_minimo, valor_maximo, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [actionId, nome, tipoJogo, orcamento_total, qtd_baloes, qtd_premiados, valor_multiplo, valor_minimo, valor_maximo, req.user.id]
+            `INSERT INTO actions (id, nome, tipo_jogo, orcamento_total, qtd_baloes, qtd_premiados, valor_multiplo, valor_minimo, valor_maximo, venda_minima, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [actionId, nome, tipoJogo, orcamento_total, qtd_baloes, qtd_premiados, valor_multiplo, valor_minimo, valor_maximo, vMinima, req.user.id]
         );
 
         const action = await db.get("SELECT * FROM actions WHERE id = ?", [actionId]);
@@ -479,10 +485,23 @@ app.post('/api/reopen-action', authMiddleware, async (req, res) => {
         const { action_id } = req.body;
         if (!action_id) return res.status(400).json({ error: "action_id required" });
 
-        // Close all currently active actions to prevent multiple active campaigns
-        await db.run("UPDATE actions SET status = 'closed' WHERE status = 'active'");
+        // Check if there are still unopened (not popped) balloons/items
+        const stats = await db.get(
+            "SELECT COUNT(id) as total, SUM(CASE WHEN estourado = 1 THEN 1 ELSE 0 END) as popped FROM balloons WHERE action_id = ?",
+            [action_id]
+        );
 
-        // Reopen the requested action
+        const total = Number(stats?.total || 0);
+        const popped = Number(stats?.popped || 0);
+
+        console.log(`[Reopen] IDs: ${action_id} | Total: ${total} | Popped: ${popped}`);
+
+        if (total > 0 && popped >= total) {
+            console.log("[Reopen] Blocked: All items opened.");
+            return res.status(400).json({ error: "Esta campanha não pode ser reaberta pois todos os itens já foram abertos." });
+        }
+
+        // Reopen the requested action (multiple active campaigns are allowed)
         await db.run("UPDATE actions SET status = 'active' WHERE id = ?", [action_id]);
 
         res.json({ success: true, message: "Ação reaberta com sucesso!" });
@@ -585,14 +604,38 @@ app.post('/api/validate-budget', async (req, res) => {
 
         if (!plano) return res.status(404).json({ error: "Orçamento não encontrado", approved: false });
 
+        console.log("PLANO_DADOS:", JSON.stringify(plano, null, 2));
+
         const isApproved = plano.statusPlano?.toLowerCase().includes("aprovado");
+        let isMinVendaMet = true;
+        let msgVenda = "";
+        let minVenda = 0;
+        
+        // Convert "190,00" or "1.190,00" string to float
+        const precoStr = String(plano.precoFinal || "0").replace(/\./g, "").replace(",", ".");
+        const valorBruto = Number(precoStr);
+
+        // Check if there is an active campaign and enforce venda_minima
+        const action = await db.get("SELECT venda_minima FROM actions WHERE status = 'active' ORDER BY created_at DESC LIMIT 1");
+        if (action && action.venda_minima > 0) {
+            minVenda = Number(action.venda_minima);
+            if (valorBruto < minVenda) {
+                isMinVendaMet = false;
+                msgVenda = `O valor do orçamento (R$ ${valorBruto.toFixed(2)}) é inferior à venda mínima da campanha (R$ ${minVenda.toFixed(2)}).`;
+            }
+        }
 
         // Block if already used to pop a balloon
         const alreadyUsed = await db.get("SELECT id FROM balloons WHERE user_id = ? AND estourado = 1", [String(cod_orcamento)]);
 
         res.json({
-            approved: isApproved && !alreadyUsed,
-            statusPlano: alreadyUsed ? "Orçamento já utilizado" : plano.statusPlano,
+            approved: isApproved && isMinVendaMet && !alreadyUsed,
+            isPlanoAprovado: isApproved,
+            isMinVendaMet: isMinVendaMet,
+            valorBruto: valorBruto,
+            vendaMinima: minVenda,
+            msgVenda: msgVenda,
+            statusPlano: alreadyUsed ? "Orçamento já utilizado." : plano.statusPlano,
             cliente: plano.cliente,
             vendedor: plano.vendedor,
             codOrcamento: plano.codOrcamento,

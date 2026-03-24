@@ -21,6 +21,7 @@ const defaultValues: ActionPayload = {
   valor_multiplo: 10,
   valor_minimo: 50,
   valor_maximo: 500,
+  venda_minima: 0,
   unidades: [],
 };
 
@@ -115,7 +116,7 @@ export default function AdminPage() {
   };
 
   const update = (field: keyof ActionPayload, value: string) => {
-    const numFields: (keyof ActionPayload)[] = ["orcamento_total", "qtd_baloes", "qtd_premiados", "valor_multiplo", "valor_minimo", "valor_maximo"];
+    const numFields: (keyof ActionPayload)[] = ["orcamento_total", "qtd_baloes", "qtd_premiados", "valor_multiplo", "valor_minimo", "valor_maximo", "venda_minima"];
     if (numFields.includes(field)) {
       // Allow empty string so user can clear the input
       if (value === "") {
@@ -343,66 +344,6 @@ export default function AdminPage() {
                         <Input id="nome" value={form.nome} onChange={(e) => update("nome", e.target.value)} placeholder="Ex: Campanha de Natal" required />
                       </div>
 
-                      {/* Configurações Rápidas (Templates) */}
-                      <div className="space-y-2 mt-4">
-                        <Label className="text-xs text-muted-foreground uppercase tracking-widest font-bold">Sugestões de Configuração</Label>
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                          <Button 
-                            type="button" 
-                            variant="outline" 
-                            size="sm" 
-                            className="flex flex-col h-auto py-2 items-start gap-1 border-primary/20 hover:bg-primary/5"
-                            onClick={() => setForm({
-                              ...form,
-                              orcamento_total: 250,
-                              qtd_baloes: 30,
-                              qtd_premiados: 10,
-                              valor_multiplo: 10,
-                              valor_minimo: 5,
-                              valor_maximo: 50
-                            })}
-                          >
-                            <span className="font-bold flex items-center gap-1">💰 Econômico</span>
-                            <span className="text-[10px] text-muted-foreground leading-tight text-left">Orç. R$250, Max R$50,<br/>Menos premiados.</span>
-                          </Button>
-                          <Button 
-                            type="button" 
-                            variant="outline" 
-                            size="sm" 
-                            className="flex flex-col h-auto py-2 items-start gap-1 border-primary/20 hover:bg-primary/5"
-                            onClick={() => setForm({
-                              ...form,
-                              orcamento_total: 500,
-                              qtd_baloes: 50,
-                              qtd_premiados: 20,
-                              valor_multiplo: 5,
-                              valor_minimo: 10,
-                              valor_maximo: 100
-                            })}
-                          >
-                            <span className="font-bold flex items-center gap-1">⚖️ Balanceado</span>
-                            <span className="text-[10px] text-muted-foreground leading-tight text-left">Orç. R$500, Max R$100,<br/>Mais chances.</span>
-                          </Button>
-                          <Button 
-                            type="button" 
-                            variant="outline" 
-                            size="sm" 
-                            className="flex flex-col h-auto py-2 items-start gap-1 border-primary/20 hover:bg-primary/5"
-                            onClick={() => setForm({
-                              ...form,
-                              orcamento_total: 1000,
-                              qtd_baloes: 100,
-                              qtd_premiados: 25,
-                              valor_multiplo: 20,
-                              valor_minimo: 20,
-                              valor_maximo: 200
-                            })}
-                          >
-                            <span className="font-bold flex items-center gap-1">⭐ Premium</span>
-                            <span className="text-[10px] text-muted-foreground leading-tight text-left">Orç. R$1000, Max R$200,<br/>Prêmios altos.</span>
-                          </Button>
-                        </div>
-                      </div>
                       <div>
                         <Label>Tipo de Jogo</Label>
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-1">
@@ -502,6 +443,10 @@ export default function AdminPage() {
                         <div>
                           <Label htmlFor="valor_maximo">Valor Máximo (R$)</Label>
                           <Input id="valor_maximo" type="number" value={form.valor_maximo ?? ""} onChange={(e) => update("valor_maximo", e.target.value)} min={1} required />
+                        </div>
+                        <div>
+                          <Label htmlFor="venda_minima">Venda Mínima p/ Estourar (R$)</Label>
+                          <Input id="venda_minima" type="number" value={form.venda_minima ?? ""} onChange={(e) => update("venda_minima", e.target.value)} min={0} required />
                         </div>
                       </div>
 
@@ -679,6 +624,7 @@ function ActionHistoryTab() {
     onSuccess: (data) => {
       toast.success(data.message);
       queryClient.invalidateQueries({ queryKey: ["active-action"] });
+      queryClient.invalidateQueries({ queryKey: ["active-actions"] });
       queryClient.invalidateQueries({ queryKey: ["actions-history"] });
     },
     onError: (err: Error) => toast.error(err.message),
@@ -735,7 +681,16 @@ function ActionHistoryTab() {
                   )}
                 </Button>
                 {act.status === "closed" && (
-                  <Button variant="outline" onClick={() => reopenMutation.mutate(act.id)} disabled={reopenMutation.isPending}>
+                  <Button 
+                    variant="outline" 
+                    onClick={() => reopenMutation.mutate(act.id)}
+                    disabled={reopenMutation.isPending || (act.estourados >= act.qtd_baloes)}
+                    title={
+                      act.estourados >= act.qtd_baloes 
+                        ? "Esta campanha não pode ser reaberta pois todos os itens já foram abertos." 
+                        : "Reabrir Campanha"
+                    }
+                  >
                     Reabrir Campanha
                   </Button>
                 )}

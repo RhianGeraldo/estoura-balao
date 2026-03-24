@@ -18,6 +18,11 @@ interface BudgetValidation {
   cliente: string;
   vendedor: string;
   codOrcamento: number;
+  isPlanoAprovado?: boolean;
+  isMinVendaMet?: boolean;
+  valorBruto?: number;
+  vendaMinima?: number;
+  msgVenda?: string;
 }
 
 export default function GamePage() {
@@ -243,15 +248,43 @@ export default function GamePage() {
             </div>
 
             {budgetValidation && !budgetValidation.approved && (
-              <div className="mt-4 rounded-lg border border-destructive/30 bg-destructive/5 p-3 flex items-start gap-2">
-                <XCircle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
-                <div className="text-sm text-destructive">
-                  <p><strong>Status: {budgetValidation.statusPlano}</strong></p>
-                  {budgetValidation.statusPlano === "Orçamento já utilizado" ? (
-                    <p>Este orçamento já utilizou seu limite de {gameConfig.itemNamePlural} disponíveis (1).</p>
-                  ) : (
-                    <p>Apenas orçamentos com status "Aprovado" podem participar.</p>
+              <div className="mt-4 rounded-lg border border-destructive/30 bg-destructive/5 p-4 flex flex-col gap-3">
+                <div className="flex items-center gap-2 text-destructive">
+                  <XCircle className="h-5 w-5 shrink-0" />
+                  <p className="font-bold">Validação Falhou</p>
+                </div>
+                
+                <div className="flex flex-col gap-2 text-sm text-destructive pl-7">
+                  <div className="flex items-center justify-between border-b border-destructive/20 pb-1">
+                    <span>Orçamento Aprovado:</span>
+                    <strong className={budgetValidation.isPlanoAprovado ? "text-emerald-500" : "text-destructive"}>
+                      {budgetValidation.isPlanoAprovado ? "Sim" : "Não"}
+                    </strong>
+                  </div>
+                  
+                  {budgetValidation.vendaMinima !== undefined && budgetValidation.vendaMinima > 0 && (
+                    <div className="flex items-center justify-between border-b border-destructive/20 pb-1">
+                      <span>Valor Mínimo Atingido:</span>
+                      <strong className={budgetValidation.isMinVendaMet ? "text-emerald-500" : "text-destructive"}>
+                        {budgetValidation.isMinVendaMet ? "Sim" : "Não"}
+                      </strong>
+                    </div>
                   )}
+
+                  <div className="mt-2 text-xs opacity-90 space-y-1">
+                    {budgetValidation.statusPlano === "Orçamento já utilizado." ? (
+                      <p>✨ Este orçamento já utilizou seu limite de {gameConfig.itemNamePlural} (1).</p>
+                    ) : (
+                      <>
+                        {!budgetValidation.isPlanoAprovado && (
+                          <p>📌 Status do sistema: {budgetValidation.statusPlano}</p>
+                        )}
+                        {!budgetValidation.isMinVendaMet && budgetValidation.msgVenda && (
+                          <p>📌 {budgetValidation.msgVenda}</p>
+                        )}
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
             )}

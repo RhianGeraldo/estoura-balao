@@ -9,6 +9,7 @@ export interface ActionPayload {
   valor_multiplo: number;
   valor_minimo: number;
   valor_maximo: number;
+  venda_minima: number;
   unidades?: string[]; // Array of Unidade IDs
 }
 
@@ -22,6 +23,7 @@ export interface Action {
   valor_multiplo: number;
   valor_minimo: number;
   valor_maximo: number;
+  venda_minima: number;
   status: string;
   created_at: string;
   created_by_name?: string;
@@ -115,6 +117,11 @@ export async function validateBudget(codOrcamento: string, unidadeId: string): P
   cliente: string;
   vendedor: string;
   codOrcamento: number;
+  isPlanoAprovado?: boolean;
+  isMinVendaMet?: boolean;
+  valorBruto?: number;
+  vendaMinima?: number;
+  msgVenda?: string;
 }> {
   return fetchApi("validate-budget", "POST", { cod_orcamento: codOrcamento, unidade_id: unidadeId });
 }
