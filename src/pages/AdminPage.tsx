@@ -584,14 +584,18 @@ function SellerRankings({ actionId }: { actionId: string }) {
   if (isLoading) return <p className="text-sm text-muted-foreground">Carregando ranking...</p>;
   if (!data?.history || data.history.length === 0) return <p className="text-sm text-muted-foreground">Nenhuma atividade registrada ainda.</p>;
 
-  // Aggregate history back into stats
-  const statsMap = new Map<string, number>();
+  // Aggregate history: count items and sum values per seller
+  const statsMap = new Map<string, { count: number; totalValor: number }>();
   data.history.forEach(item => {
-    statsMap.set(item.vendedor, (statsMap.get(item.vendedor) || 0) + 1);
+    const current = statsMap.get(item.vendedor) || { count: 0, totalValor: 0 };
+    statsMap.set(item.vendedor, {
+      count: current.count + 1,
+      totalValor: current.totalValor + (item.valor || 0),
+    });
   });
 
   const stats = Array.from(statsMap.entries())
-    .map(([vendedor, baloes_estourados]) => ({ vendedor, baloes_estourados }))
+    .map(([vendedor, { count, totalValor }]) => ({ vendedor, baloes_estourados: count, totalValor }))
     .sort((a, b) => b.baloes_estourados - a.baloes_estourados);
 
   return (
@@ -604,7 +608,10 @@ function SellerRankings({ actionId }: { actionId: string }) {
             </div>
             <span className="font-medium text-sm truncate max-w-[120px]" title={stat.vendedor}>{stat.vendedor}</span>
           </div>
-          <span className="font-bold text-primary">{stat.baloes_estourados} {stat.baloes_estourados === 1 ? 'item' : 'itens'}</span>
+          <div className="flex flex-col items-end gap-0.5">
+            <span className="font-bold text-primary text-sm">{stat.baloes_estourados} {stat.baloes_estourados === 1 ? 'item' : 'itens'}</span>
+            <span className="text-xs text-muted-foreground font-medium">R$ {stat.totalValor.toFixed(2)}</span>
+          </div>
         </div>
       ))}
     </div>
