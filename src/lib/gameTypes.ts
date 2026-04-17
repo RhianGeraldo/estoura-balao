@@ -1,4 +1,4 @@
-export type GameType = 'balloon' | 'envelope' | 'heart' | 'chest';
+export type GameType = 'balloon' | 'envelope' | 'heart' | 'chest' | 'roulette';
 
 export interface GameTypeConfig {
   id: GameType;
@@ -80,6 +80,23 @@ export const GAME_TYPES: Record<GameType, GameTypeConfig> = {
       'bg-chest-emerald',
       'bg-chest-ruby',
       'bg-chest-sapphire',
+    ],
+  },
+  roulette: {
+    id: 'roulette',
+    label: 'Roleta',
+    labelPlural: 'Roletas',
+    emoji: '🎰',
+    actionVerb: 'Girar',
+    itemName: 'giro',
+    itemNamePlural: 'giros',
+    colors: [
+      'bg-red-500',
+      'bg-gray-900',
+      'bg-red-600',
+      'bg-gray-800',
+      'bg-red-400',
+      'bg-gray-700',
     ],
   },
 };

@@ -4,6 +4,7 @@ import type { GameType } from "@/lib/gameTypes";
 import EnvelopeItem from "@/components/game-items/EnvelopeItem";
 import HeartItem from "@/components/game-items/HeartItem";
 import ChestItem from "@/components/game-items/ChestItem";
+import RouletteItem from "@/components/game-items/RouletteItem";
 
 const BALLOON_COLORS = [
   "bg-balloon-red",
@@ -22,9 +23,12 @@ interface GameItemProps {
   onPop: () => void;
   isPopping: boolean;
   gameType?: GameType;
+  totalRemaining?: number;
+  totalItems?: number;
+  onSpinComplete?: () => void;
 }
 
-export default function GameItem({ balloon, index, onPop, isPopping, gameType = "balloon" }: GameItemProps) {
+export default function GameItem({ balloon, index, onPop, isPopping, gameType = "balloon", totalRemaining = 0, totalItems = 0, onSpinComplete }: GameItemProps) {
   switch (gameType) {
     case "envelope":
       return <EnvelopeItem balloon={balloon} index={index} onPop={onPop} isPopping={isPopping} />;
@@ -32,6 +36,8 @@ export default function GameItem({ balloon, index, onPop, isPopping, gameType = 
       return <HeartItem balloon={balloon} index={index} onPop={onPop} isPopping={isPopping} />;
     case "chest":
       return <ChestItem balloon={balloon} index={index} onPop={onPop} isPopping={isPopping} />;
+    case "roulette":
+      return <RouletteItem balloon={balloon} index={index} onPop={onPop} isPopping={isPopping} totalRemaining={totalRemaining} totalItems={totalItems} onSpinComplete={onSpinComplete} />;
     case "balloon":
     default:
       return <BalloonItemVisual balloon={balloon} index={index} onPop={onPop} isPopping={isPopping} />;

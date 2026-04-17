@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getActiveActions, getBalloons, popBalloon, validateBudget, type Balloon, type Unidade } from "@/lib/api";
 import { motion, AnimatePresence } from "framer-motion";
@@ -54,6 +54,17 @@ export default function GamePage() {
   const actionId = action?.id;
   const gameType = (action?.tipo_jogo || 'balloon') as GameType;
   const gameConfig = getGameTypeConfig(gameType);
+  const isRoulette = gameType === 'roulette';
+
+  // Tracks which balloon is currently spinning so we don't lose it on re-render
+  const [rouletteActiveBalloonId, setRouletteActiveBalloonId] = useState<string | null>(null);
+  // Stores the result from the API until the wheel animation finishes
+  const [pendingRouletteResult, setPendingRouletteResult] = useState<{
+    premiado: boolean; valor: number; codOrcamento: number | null; vendedor: string | null;
+  } | null>(null);
+  // Ref always pointing to the latest value — used in callbacks to avoid stale closures
+  const pendingRouletteResultRef = useRef(pendingRouletteResult);
+  pendingRouletteResultRef.current = pendingRouletteResult;
 
   const { data: balloonsData, isLoading: balloonsLoading } = useQuery({
     queryKey: ["balloons", actionId],
@@ -81,13 +92,33 @@ export default function GamePage() {
     mutationFn: (id: string) => popBalloon(id, codOrcamento, budgetValidation?.vendedor, budgetValidation?.cliente),
     onSuccess: (data) => {
       const b = data.balloon;
-      if (b.premiado) {
-        confetti({
-          particleCount: 150,
-          spread: 70,
-          origin: { y: 0.6 }
+
+      if (isRoulette) {
+        // Roulette: update cache so RouletteItem.useEffect detects estourado=true
+        // and starts the wheel animation. Do NOT invalidate yet (would unmount wheel).
+        queryClient.setQueryData(["balloons", actionId], (old: any) => {
+          if (!old?.balloons) return old;
+          return {
+            ...old,
+            balloons: old.balloons.map((balloon: Balloon) =>
+              balloon.id === b.id
+                ? { ...balloon, estourado: true, premiado: Boolean(b.premiado), valor: b.valor }
+                : balloon
+            ),
+          };
         });
+        // Save result — will be shown AFTER the wheel animation finishes
+        setPendingRouletteResult({
+          premiado: Boolean(b.premiado),
+          valor: Number(b.valor),
+          codOrcamento: budgetValidation?.codOrcamento || null,
+          vendedor: budgetValidation?.vendedor || null,
+        });
+        return;
       }
+
+      // Non-roulette: identical original behaviour
+      if (b.premiado) confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
       setPoppedResult({ show: true, premiado: b.premiado, valor: Number(b.valor), codOrcamento: budgetValidation?.codOrcamento || null, vendedor: budgetValidation?.vendedor || null });
       queryClient.invalidateQueries({ queryKey: ["balloons", actionId] });
       setTimeout(() => {
@@ -112,6 +143,7 @@ export default function GamePage() {
     setCodOrcamento("");
     setSelectedUnidade("");
     setBudgetValidation(null);
+    setRouletteActiveBalloonId(null);
   };
 
   if (actionLoading) {
@@ -174,6 +206,38 @@ export default function GamePage() {
   const balloons = balloonsData?.balloons || [];
   const unidades = action?.unidades || [];
   const canPop = budgetValidation?.approved === true;
+
+  // For roulette: pin the active ballot by ID so the wheel isn't replaced
+  // mid-animation when the query re-renders.
+  const activeBalloon = isRoulette
+    ? (rouletteActiveBalloonId
+        ? balloons.find((b) => b.id === rouletteActiveBalloonId) ?? null
+        : balloons.find((b) => !b.estourado) ?? null)
+    : null;
+  const totalRemaining = isRoulette ? balloons.filter((b) => !b.estourado).length : 0;
+  const totalItems = isRoulette ? balloons.length : 0;
+
+  const handleRouletteSpinComplete = () => {
+    const r = pendingRouletteResultRef.current;
+    if (r) {
+      if (r.premiado) confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
+      setPoppedResult({ show: true, premiado: r.premiado, valor: r.valor, codOrcamento: r.codOrcamento, vendedor: r.vendedor });
+      setTimeout(() => {
+        setPoppedResult((p) => {
+          if (p.show) {
+            handleReset();
+            setRouletteActiveBalloonId(null); // Unlock ONLY after reset
+          }
+          return { ...p, show: false };
+        });
+      }, 10000);
+      setPendingRouletteResult(null);
+    } else {
+      // Safety fallback
+      setRouletteActiveBalloonId(null);
+    }
+    queryClient.invalidateQueries({ queryKey: ["balloons", actionId] });
+  };
 
   return (
     <div className="min-h-screen bg-background relative overflow-hidden">
@@ -320,10 +384,45 @@ export default function GamePage() {
         )}
       </div>
 
-      <main className="mx-auto max-w-6xl p-6">
+      <main className={`p-6 ${isRoulette ? 'flex flex-col items-center justify-center min-h-[calc(100vh-200px)]' : 'mx-auto max-w-6xl'}`}>
         {balloonsLoading ? (
           <p className="text-center text-muted-foreground">Carregando {gameConfig.itemNamePlural}...</p>
+        ) : isRoulette ? (
+          // --- ROULETTE LAYOUT ---
+          <div className={`flex flex-col items-center gap-6 w-full max-w-lg mx-auto ${!canPop ? "opacity-50 pointer-events-none" : ""}`}>
+            {!canPop && (
+              <p className="text-sm text-muted-foreground">
+                🔒 Valide um orçamento aprovado para girar a roleta
+              </p>
+            )}
+            {activeBalloon ? (
+              <GameItem
+                key="roulette-wheel"
+                balloon={activeBalloon}
+                index={0}
+                onPop={() => {
+                  // Pin the ballot ID before mutating so the wheel stays mounted
+                  if (!rouletteActiveBalloonId && activeBalloon) {
+                    setRouletteActiveBalloonId(activeBalloon.id);
+                  }
+                  popMutation.mutate(activeBalloon.id);
+                }}
+                isPopping={popMutation.isPending}
+                gameType={gameType}
+                totalRemaining={totalRemaining}
+                totalItems={totalItems}
+                onSpinComplete={handleRouletteSpinComplete}
+              />
+            ) : (
+              <div className="text-center py-12">
+                <p className="text-4xl mb-4">🎰</p>
+                <p className="font-display text-xl font-bold text-foreground">Todos os giros realizados!</p>
+                <p className="text-muted-foreground mt-1">Esta campanha foi encerrada.</p>
+              </div>
+            )}
+          </div>
         ) : (
+          // --- GRID LAYOUT (balloon, envelope, heart, chest) ---
           <>
             {!canPop && (
               <div className="text-center mb-4">

@@ -235,7 +235,7 @@ app.post('/api/create-action', authMiddleware, async (req, res) => {
         if (qtd_premiados * valor_minimo > orcamento_total) return res.status(400).json({ error: "Orçamento insuficiente para os valores mínimos" });
         if (valor_minimo > valor_maximo) return res.status(400).json({ error: "Valor mínimo não pode ser maior que valor máximo" });
 
-        const validTypes = ['balloon', 'envelope', 'heart', 'chest'];
+        const validTypes = ['balloon', 'envelope', 'heart', 'chest', 'roulette'];
         const tipoJogo = validTypes.includes(tipo_jogo) ? tipo_jogo : 'balloon';
 
         const actionId = crypto.randomUUID();
