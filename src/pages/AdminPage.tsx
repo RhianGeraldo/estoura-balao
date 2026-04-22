@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { createAction, getActiveActions, updateAction, closeAction, getUnidades, createUnidade, deleteUnidade, getVendedoresStats, getActions, reopenAction, getUsers, createUser, deleteUser, changePassword, updateUser, type ActionPayload } from "@/lib/api";
+import { createAction, getActiveActions, updateAction, closeAction, getUnidades, createUnidade, deleteUnidade, getVendedoresStats, getActions, reopenAction, getUsers, createUser, deleteUser, changePassword, updateUser, type ActionPayload, type Action } from "@/lib/api";
 import { GAME_TYPE_LIST, getGameTypeConfig } from "@/lib/gameTypes";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -29,7 +29,7 @@ export default function AdminPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [form, setForm] = useState<ActionPayload>(defaultValues);
-  const [editingAction, setEditingAction] = useState<{ id: string, nome: string, unidades: string[] } | null>(null);
+  const [editingAction, setEditingAction] = useState<(ActionPayload & { id: string }) | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 
   const handleLogout = () => {
@@ -153,6 +153,15 @@ export default function AdminPage() {
     return { disponivel, sobra, sugestao };
   })();
 
+  const editBudgetStats = (() => {
+    if (!editingAction) return { disponivel: 0, sobra: 0 };
+    const totalBase = (editingAction.qtd_premiados || 0) * (editingAction.valor_minimo || 0);
+    const disponivel = (editingAction.orcamento_total || 0) - totalBase;
+    const multiplo = Math.max(1, editingAction.valor_multiplo || 1);
+    const sobra = disponivel > 0 ? disponivel % multiplo : 0;
+    return { disponivel, sobra };
+  })();
+
 
 
   return (
@@ -225,7 +234,10 @@ export default function AdminPage() {
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
-                          <Button variant="outline" size="sm" onClick={() => setEditingAction({ id: action.id, nome: action.nome, unidades: action.unidades?.map((u: any) => u.id) || [] })}>
+                          <Button variant="outline" size="sm" onClick={() => setEditingAction({ 
+                            ...action, 
+                            unidades: action.unidades?.map((u: any) => u.id) || [] 
+                          })}>
                             <Edit className="mr-2 h-4 w-4" /> Editar
                           </Button>
                           <Button variant="destructive" size="sm" onClick={() => closeMutation.mutate(action.id)} disabled={closeMutation.isPending}>
@@ -270,9 +282,9 @@ export default function AdminPage() {
 
                 {/* Modal de Edição */}
                 <Dialog open={!!editingAction} onOpenChange={(open) => !open && setEditingAction(null)}>
-                  <DialogContent className="sm:max-w-md w-[95vw] rounded-lg p-6">
+                  <DialogContent className="sm:max-w-3xl w-[95vw] rounded-lg p-6 max-h-[90vh] overflow-y-auto">
                     <DialogHeader>
-                      <DialogTitle className="font-display">Editar Ação</DialogTitle>
+                      <DialogTitle className="font-display text-2xl">Editar Ação</DialogTitle>
                       <DialogDescription>
                         Altere o nome ou as unidades participantes desta campanha. Os limites financeiros e regras do jogo não podem ser alterados após ativados.
                       </DialogDescription>
@@ -280,45 +292,133 @@ export default function AdminPage() {
                     {editingAction && (
                       <form onSubmit={(e) => {
                         e.preventDefault();
-                        updateMutation.mutate({ id: editingAction.id, payload: { nome: editingAction.nome, unidades: editingAction.unidades } });
+                        updateMutation.mutate({ id: editingAction.id, payload: { nome: editingAction.nome, unidades: editingAction.unidades || [] } });
                       }} className="space-y-4 py-4">
                         <div className="space-y-2">
-                          <Label>Nome da Ação</Label>
-                          <Input value={editingAction.nome} onChange={(e) => setEditingAction({ ...editingAction, nome: e.target.value })} required />
+                          <Label htmlFor="edit-nome">Nome da Ação</Label>
+                          <Input id="edit-nome" value={editingAction.nome} onChange={(e) => setEditingAction({ ...editingAction, nome: e.target.value })} required />
                         </div>
+
                         <div className="space-y-2">
-                          <div className="flex items-center justify-between mb-2 mt-4">
+                          <Label>Tipo de Jogo</Label>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-1">
+                            {GAME_TYPE_LIST.map((gt) => (
+                              <div
+                                key={gt.id}
+                                className={`flex flex-col items-center gap-1 p-3 rounded-lg border-2 transition-all text-sm opacity-60 ${
+                                  editingAction.tipo_jogo === gt.id
+                                    ? "border-primary bg-primary/10 shadow-sm opacity-100"
+                                    : "border-border bg-muted/30"
+                                }`}
+                              >
+                                <span className="text-2xl">{gt.emoji}</span>
+                                <span className="font-display font-medium text-foreground">{gt.labelPlural}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-6">
+                          <div className="space-y-1">
+                            <Label className="text-muted-foreground">Orçamento Total (R$)</Label>
+                            <Input value={editingAction.orcamento_total} disabled className="bg-muted/50" />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-muted-foreground">Qtd. {getGameTypeConfig(editingAction.tipo_jogo || "balloon").labelPlural}</Label>
+                            <Input value={editingAction.qtd_baloes} disabled className="bg-muted/50" />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-muted-foreground">Qtd. Premiados</Label>
+                            <Input value={editingAction.qtd_premiados} disabled className="bg-muted/50" />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-muted-foreground">Valor Múltiplo (R$)</Label>
+                            <Input value={editingAction.valor_multiplo} disabled className="bg-muted/50" />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-muted-foreground">Valor Mínimo (R$)</Label>
+                            <Input value={editingAction.valor_minimo} disabled className="bg-muted/50" />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-muted-foreground">Valor Máximo (R$)</Label>
+                            <Input value={editingAction.valor_maximo} disabled className="bg-muted/50" />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-muted-foreground">Venda Mínima p/ Estourar (R$)</Label>
+                            <Input value={editingAction.venda_minima} disabled className="bg-muted/50" />
+                          </div>
+                        </div>
+
+                        {/* Budget Utilization Summary (Read-only) */}
+                        <div className={`p-4 rounded-lg border-2 mt-4 transition-all ${editBudgetStats.sobra === 0 ? 'bg-primary/5 border-primary/20' : 'bg-amber-500/5 border-amber-500/20'}`}>
+                          <div className="flex items-center justify-between mb-2">
+                            <h4 className="text-sm font-bold flex items-center gap-2">
+                              <DollarSign className="h-4 w-4" />
+                              Resumo da Distribuição
+                            </h4>
+                            {editBudgetStats.sobra === 0 && (
+                              <span className="text-[10px] bg-primary/20 text-primary px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">100% Exato</span>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-2 gap-4 text-sm">
+                            <div>
+                              <p className="text-muted-foreground text-xs">Total Distribuído</p>
+                              <p className="font-bold text-foreground">R$ {(editingAction.orcamento_total - editBudgetStats.sobra).toFixed(2)}</p>
+                            </div>
+                            <div>
+                              <p className="text-muted-foreground text-xs">Sobra do Orçamento</p>
+                              <p className={`font-bold ${editBudgetStats.sobra > 0 ? 'text-amber-600' : 'text-primary'}`}>R$ {editBudgetStats.sobra.toFixed(2)}</p>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="space-y-3 mt-6">
+                          <div className="flex items-center justify-between">
                             <Label>Unidades Participantes <span className="text-red-500">*</span></Label>
                             <Button type="button" variant="ghost" size="sm" className="h-8 text-xs" onClick={() => {
                               const allIds = unidades.map((u: any) => u.id) || [];
-                              if (editingAction.unidades.length === allIds.length && allIds.length > 0) {
+                              if (editingAction.unidades?.length === allIds.length && allIds.length > 0) {
                                 setEditingAction({ ...editingAction, unidades: [] });
                               } else {
                                 setEditingAction({ ...editingAction, unidades: allIds });
                               }
                             }}>
-                              {editingAction.unidades.length === unidades.length && unidades.length > 0 ? "Desmarcar Todas" : "Selecionar Todas"}
+                              {(editingAction.unidades?.length ?? 0) === unidades.length && unidades.length > 0 ? "Desmarcar Todas" : "Selecionar Todas"}
                             </Button>
                           </div>
                           {(!unidades || unidades.length === 0) ? (
                             <div className="text-sm text-muted-foreground p-3 bg-muted rounded-md text-center">Nenhuma unidade cadastrada.</div>
                           ) : (
-                            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                              {unidades.map((u: any) => (
-                                <button key={u.id} type="button" onClick={() => {
-                                  const list = editingAction.unidades.includes(u.id) ? editingAction.unidades.filter(id => id !== u.id) : [...editingAction.unidades, u.id];
-                                  setEditingAction({ ...editingAction, unidades: list });
-                                }} className={`p-2 border rounded-md text-sm transition-all focus:outline-none flex flex-col items-center justify-center gap-1 min-h-[60px] ${editingAction.unidades.includes(u.id) ? "border-primary bg-primary/10 text-primary-foreground font-medium" : "border-border bg-background hover:bg-muted"}`}>
-                                  <span className="truncate w-full text-center" title={u.nome}>{u.nome}</span>
-                                  {editingAction.unidades.includes(u.id) && <CheckCircle className="h-4 w-4 text-primary shrink-0" />}
-                                </button>
-                              ))}
+                            <div className="flex flex-wrap gap-2">
+                              {unidades.map((u: any) => {
+                                const isSelected = (editingAction.unidades || []).includes(u.id);
+                                return (
+                                  <button
+                                    key={u.id}
+                                    type="button"
+                                    onClick={() => {
+                                      const current = editingAction.unidades || [];
+                                      const next = current.includes(u.id) 
+                                        ? current.filter(id => id !== u.id)
+                                        : [...current, u.id];
+                                      setEditingAction(f => ({ ...f!, unidades: next }));
+                                    }}
+                                    className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${
+                                      isSelected 
+                                        ? "bg-primary text-primary-foreground border-primary"
+                                        : "bg-background text-foreground border-border hover:border-primary/50"
+                                    }`}
+                                  >
+                                    {u.nome}
+                                  </button>
+                                );
+                              })}
                             </div>
                           )}
                         </div>
-                        <div className="pt-4 flex flex-col-reverse sm:flex-row justify-end gap-2">
+                        <div className="pt-8 flex flex-col-reverse sm:flex-row justify-end gap-2">
                           <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => setEditingAction(null)}>Cancelar</Button>
-                          <Button type="submit" className="w-full sm:w-auto" disabled={updateMutation.isPending || editingAction.unidades.length === 0}>
+                          <Button type="submit" className="w-full sm:w-auto" disabled={updateMutation.isPending || (editingAction.unidades || []).length === 0}>
                             {updateMutation.isPending ? "Salvando..." : "Salvar Alterações"}
                           </Button>
                         </div>
