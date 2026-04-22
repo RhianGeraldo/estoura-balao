@@ -15,13 +15,13 @@ import { PartyPopper, Trophy, Target, DollarSign, XCircle, Building2, Trash2, Pl
 const defaultValues: ActionPayload = {
   nome: "",
   tipo_jogo: "balloon",
-  orcamento_total: 1000,
-  qtd_baloes: 20,
-  qtd_premiados: 5,
-  valor_multiplo: 10,
-  valor_minimo: 50,
-  valor_maximo: 500,
-  venda_minima: 0,
+  orcamento_total: 250,
+  qtd_baloes: 30,
+  qtd_premiados: 20,
+  valor_multiplo: 5,
+  valor_minimo: 5,
+  valor_maximo: 30,
+  venda_minima: 700,
   unidades: [],
 };
 
