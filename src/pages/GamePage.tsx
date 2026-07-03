@@ -17,7 +17,7 @@ interface BudgetValidation {
   statusPlano: string;
   cliente: string;
   vendedor: string;
-  codOrcamento: number;
+  codOrcamento: string[];
   isPlanoAprovado?: boolean;
   isMinVendaMet?: boolean;
   valorBruto?: number;
@@ -30,9 +30,9 @@ interface BudgetValidation {
 export default function GamePage() {
   const queryClient = useQueryClient();
   const [selectedUnidade, setSelectedUnidade] = useState("");
-  const [codOrcamento, setCodOrcamento] = useState("");
+  const [codOrcamentos, setCodOrcamentos] = useState<string[]>([""]);
   const [budgetValidation, setBudgetValidation] = useState<BudgetValidation | null>(null);
-  const [poppedResult, setPoppedResult] = useState<{ show: boolean; premiado: boolean; valor: number; codOrcamento: number | null; vendedor: string | null }>({
+  const [poppedResult, setPoppedResult] = useState<{ show: boolean; premiado: boolean; valor: number; codOrcamento: string | null; vendedor: string | null }>({
     show: false,
     premiado: false,
     valor: 0,
@@ -62,7 +62,7 @@ export default function GamePage() {
   const [rouletteActiveBalloonId, setRouletteActiveBalloonId] = useState<string | null>(null);
   // Stores the result from the API until the wheel animation finishes
   const [pendingRouletteResult, setPendingRouletteResult] = useState<{
-    premiado: boolean; valor: number; codOrcamento: number | null; vendedor: string | null;
+    premiado: boolean; valor: number; codOrcamento: string | null; vendedor: string | null;
   } | null>(null);
   // Ref always pointing to the latest value — used in callbacks to avoid stale closures
   const pendingRouletteResultRef = useRef(pendingRouletteResult);
@@ -75,7 +75,10 @@ export default function GamePage() {
   });
 
   const validateMutation = useMutation({
-    mutationFn: () => validateBudget(codOrcamento.trim(), selectedUnidade),
+    mutationFn: () => {
+      const filtered = codOrcamentos.map(c => c.trim()).filter(c => c !== "");
+      return validateBudget(filtered, selectedUnidade);
+    },
     onSuccess: (data) => {
       setBudgetValidation(data);
       if (!data.approved) {
@@ -91,7 +94,7 @@ export default function GamePage() {
   });
 
   const popMutation = useMutation({
-    mutationFn: (id: string) => popBalloon(id, codOrcamento, budgetValidation?.vendedor, budgetValidation?.cliente),
+    mutationFn: (id: string) => popBalloon(id, budgetValidation?.codOrcamento, budgetValidation?.vendedor, budgetValidation?.cliente),
     onSuccess: (data) => {
       const b = data.balloon;
 
@@ -137,12 +140,13 @@ export default function GamePage() {
 
   const handleValidate = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!codOrcamento.trim() || !selectedUnidade) return;
+    const hasValidCode = codOrcamentos.some(c => c.trim() !== "");
+    if (!hasValidCode || !selectedUnidade) return;
     validateMutation.mutate();
   };
 
   const handleReset = () => {
-    setCodOrcamento("");
+    setCodOrcamentos([""]);
     setSelectedUnidade("");
     setBudgetValidation(null);
     setRouletteActiveBalloonId(null);
@@ -297,16 +301,49 @@ export default function GamePage() {
               </Select>
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Código do Orçamento</label>
-              <div className="flex flex-col sm:flex-row gap-2">
-                <Input
-                  placeholder="Ex: 123456"
-                  value={codOrcamento}
-                  onChange={(e) => setCodOrcamento(e.target.value)}
-                  className="text-lg font-display w-full"
-                  disabled={validateMutation.isPending}
-                />
-                <Button type="submit" disabled={validateMutation.isPending || !codOrcamento.trim() || !selectedUnidade} className="w-full sm:w-auto mt-2 sm:mt-0">
+              <label className="text-sm font-medium">Códigos dos Orçamentos</label>
+              {codOrcamentos.map((cod, index) => (
+                <div key={index} className="flex gap-2 mb-2">
+                  <Input
+                    placeholder="Ex: 123456"
+                    value={cod}
+                    onChange={(e) => {
+                      const newCods = [...codOrcamentos];
+                      newCods[index] = e.target.value;
+                      setCodOrcamentos(newCods);
+                    }}
+                    className="text-lg font-display w-full"
+                    disabled={validateMutation.isPending}
+                  />
+                  {codOrcamentos.length > 1 && (
+                    <Button 
+                      type="button" 
+                      variant="outline" 
+                      onClick={() => {
+                        const newCods = codOrcamentos.filter((_, i) => i !== index);
+                        setCodOrcamentos(newCods);
+                      }}
+                      className="shrink-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+                    >
+                      -
+                    </Button>
+                  )}
+                </div>
+              ))}
+              <div className="flex gap-2">
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  onClick={() => setCodOrcamentos([...codOrcamentos, ""])}
+                  className="w-full sm:w-auto"
+                >
+                  + Adicionar Orçamento
+                </Button>
+                <Button 
+                  type="submit" 
+                  disabled={validateMutation.isPending || codOrcamentos.every(c => c.trim() === "") || !selectedUnidade} 
+                  className="w-full sm:w-auto ml-auto"
+                >
                   {validateMutation.isPending ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (

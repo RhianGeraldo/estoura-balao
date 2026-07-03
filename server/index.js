@@ -645,8 +645,10 @@ app.delete('/api/unidades', authMiddleware, async (req, res) => {
 // POST /validate-budget
 app.post('/api/validate-budget', async (req, res) => {
     try {
-        const { cod_orcamento, unidade_id } = req.body;
-        if (!cod_orcamento || !unidade_id) return res.status(400).json({ error: "cod_orcamento e unidade_id são obrigatórios" });
+        const { cod_orcamentos, unidade_id, cod_orcamento } = req.body;
+        const orcamentos = cod_orcamentos || (cod_orcamento ? [cod_orcamento] : []);
+        
+        if (orcamentos.length === 0 || !unidade_id) return res.status(400).json({ error: "cod_orcamentos e unidade_id são obrigatórios" });
 
         const unidade = await db.get("SELECT token FROM unidades WHERE id = ?", [unidade_id]);
         if (!unidade) return res.status(404).json({ error: "Unidade não encontrada" });
@@ -657,56 +659,100 @@ app.post('/api/validate-budget', async (req, res) => {
         startDate.setDate(startDate.getDate() - 30);
         const dtInicio = startDate.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
 
-        const apiUrl = `https://app.bellesoftware.com.br/api/release/controller/IntegracaoExterna/v1.0/venda_planos?codEstab=1&dtInicio=${dtInicio}&dtFim=${dtFim}&codOrcamento=${cod_orcamento}`;
-
-        const fetchResult = await fetch(apiUrl, { headers: { "Authorization": unidade.token } });
-        if (!fetchResult.ok) return res.status(502).json({ error: "Erro ao consultar API externa" });
-
-        const apiData = await fetchResult.json();
-        const planos = Array.isArray(apiData) ? apiData : [apiData];
-        const plano = planos.find((p) => String(p.codOrcamento) === String(cod_orcamento));
-
-        if (!plano) return res.status(404).json({ error: "Orçamento não encontrado", approved: false });
-
-        console.log("PLANO_DADOS:", JSON.stringify(plano, null, 2));
-
-        const isApproved = plano.statusPlano?.toLowerCase().includes("aprovado");
-        let isMinVendaMet = true;
-        let msgVenda = "";
-        let minVenda = 0;
+        let totalValorBruto = 0;
+        let totalPrecoOriginal = 0;
+        let isApproved = true;
+        let comumVendedor = null;
+        let comumCliente = null;
+        let combinedStatusPlano = "";
         
-        // Convert "190,00" or "1.190,00" string to float
-        const precoStr = String(plano.precoFinal || "0").replace(/\./g, "").replace(",", ".");
-        const valorBruto = Number(precoStr);
+        let allParcelas = [];
 
-        let discountPct = 0;
-        if (plano.tipoDesconto === "%") {
-            const descStr = String(plano.desconto || "0").replace(/\./g, "").replace(",", ".");
-            discountPct = Number(descStr);
-        } else {
-            const precoOriginalStr = String(plano.preco || "0").replace(/\./g, "").replace(",", ".");
-            const precoOriginal = Number(precoOriginalStr);
-            if (precoOriginal > 0) {
-                discountPct = ((precoOriginal - valorBruto) / precoOriginal) * 100;
+        for (const cod of orcamentos) {
+            const apiUrl = `https://app.bellesoftware.com.br/api/release/controller/IntegracaoExterna/v1.0/venda_planos?codEstab=1&dtInicio=${dtInicio}&dtFim=${dtFim}&codOrcamento=${cod}`;
+            const fetchResult = await fetch(apiUrl, { headers: { "Authorization": unidade.token } });
+            if (!fetchResult.ok) return res.status(502).json({ error: `Erro ao consultar API externa para orçamento ${cod}` });
+
+            const apiData = await fetchResult.json();
+            const planos = Array.isArray(apiData) ? apiData : [apiData];
+            const plano = planos.find((p) => String(p.codOrcamento) === String(cod));
+
+            if (!plano) return res.status(404).json({ error: `Orçamento ${cod} não encontrado`, approved: false });
+
+            console.log(`PLANO_DADOS (${cod}):`, JSON.stringify(plano, null, 2));
+
+            if (!plano.statusPlano?.toLowerCase().includes("aprovado")) {
+                isApproved = false;
+                combinedStatusPlano = plano.statusPlano;
+            }
+
+            if (!comumVendedor) {
+                comumVendedor = plano.vendedor;
+                comumCliente = plano.cliente;
+            } else if (String(plano.vendedor).trim().toLowerCase() !== String(comumVendedor).trim().toLowerCase()) {
+                return res.status(400).json({ error: "Todos os orçamentos informados devem ser do mesmo vendedor.", approved: false });
+            }
+
+            const precoStr = String(plano.precoFinal || "0").replace(/\./g, "").replace(",", ".");
+            const valorBruto = Number(precoStr);
+            totalValorBruto += valorBruto;
+
+            let precoOriginal = 0;
+            if (plano.tipoDesconto === "%") {
+                const descStr = String(plano.desconto || "0").replace(/\./g, "").replace(",", ".");
+                const discountPctLocal = Number(descStr);
+                precoOriginal = valorBruto / (1 - (discountPctLocal / 100));
+            } else {
+                const precoOriginalStr = String(plano.preco || "0").replace(/\./g, "").replace(",", ".");
+                precoOriginal = Number(precoOriginalStr);
+            }
+            if (!precoOriginal || precoOriginal < valorBruto) precoOriginal = valorBruto;
+            totalPrecoOriginal += precoOriginal;
+
+            if (plano.parcelas && Array.isArray(plano.parcelas)) {
+                allParcelas = allParcelas.concat(plano.parcelas);
             }
         }
 
-        // Check if there is an active campaign and enforce venda_minima and premium rules
+        let alreadyUsed = false;
+        for (const cod of orcamentos) {
+            const used = await db.get("SELECT id FROM balloons WHERE estourado = 1 AND (user_id = ? OR user_id LIKE ? OR user_id LIKE ? OR user_id LIKE ?)", 
+                [String(cod), `${cod}, %`, `%, ${cod}, %`, `%, ${cod}`]);
+            if (used) {
+                alreadyUsed = true;
+                combinedStatusPlano = "Orçamento já utilizado.";
+                break;
+            }
+        }
+
+        if (isApproved && combinedStatusPlano === "") {
+            combinedStatusPlano = "Aprovado";
+        }
+
+        let isMinVendaMet = true;
+        let msgVenda = "";
+        let minVenda = 0;
+        let discountPct = 0;
+
+        if (totalPrecoOriginal > 0) {
+            discountPct = ((totalPrecoOriginal - totalValorBruto) / totalPrecoOriginal) * 100;
+        }
+
         const action = await db.get("SELECT venda_minima, venda_minima_premium, desconto_max_premium, qtd_baloes_premium, formas_pagamento_premium FROM actions WHERE status = 'active' ORDER BY created_at DESC LIMIT 1");
         
         let nivelPermitido = null;
         if (action) {
             minVenda = Number(action.venda_minima || 0);
-            if (valorBruto < minVenda) {
+            if (totalValorBruto < minVenda) {
                 isMinVendaMet = false;
-                msgVenda = `O valor do orçamento (R$ ${valorBruto.toFixed(2)}) é inferior à venda mínima da campanha (R$ ${minVenda.toFixed(2)}).`;
+                msgVenda = `O valor total (R$ ${totalValorBruto.toFixed(2)}) é inferior à venda mínima da campanha (R$ ${minVenda.toFixed(2)}).`;
             } else {
                 const hasPremium = (action.qtd_baloes_premium || 0) > 0;
                 if (hasPremium) {
                     const minVendaPremium = Number(action.venda_minima_premium || 0);
                     const descMaxPremium = Number(action.desconto_max_premium || 0);
                     
-                    if (minVendaPremium > 0 && valorBruto >= minVendaPremium) {
+                    if (minVendaPremium > 0 && totalValorBruto >= minVendaPremium) {
                         nivelPermitido = "premium";
                     } else if (descMaxPremium > 0 && discountPct <= descMaxPremium) {
                         nivelPermitido = "premium";
@@ -714,14 +760,13 @@ app.post('/api/validate-budget', async (req, res) => {
                         nivelPermitido = "simples";
                     }
                     
-                    // Validação da Forma de Pagamento
                     if (nivelPermitido === "premium" && action.formas_pagamento_premium) {
                         try {
                             const allowedMethods = JSON.parse(action.formas_pagamento_premium);
                             if (Array.isArray(allowedMethods) && allowedMethods.length > 0) {
                                 let hasAllowedPayment = false;
-                                if (plano.parcelas && Array.isArray(plano.parcelas)) {
-                                    for (const parcela of plano.parcelas) {
+                                if (allParcelas.length > 0) {
+                                    for (const parcela of allParcelas) {
                                         const pm = String(parcela.formaPagamento || "").toLowerCase();
                                         if (
                                             (allowedMethods.includes("pix") && pm.includes("pix")) ||
@@ -743,7 +788,6 @@ app.post('/api/validate-budget', async (req, res) => {
                             console.error("Erro ao fazer parse de formas_pagamento_premium", e);
                         }
                     }
-
                 } else {
                     nivelPermitido = "simples";
                 }
@@ -752,20 +796,19 @@ app.post('/api/validate-budget', async (req, res) => {
             nivelPermitido = "simples";
         }
 
-        // Block if already used to pop a balloon
-        const alreadyUsed = await db.get("SELECT id FROM balloons WHERE user_id = ? AND estourado = 1", [String(cod_orcamento)]);
+        const combinedCodOrcamentoStr = orcamentos.join(", ");
 
         res.json({
             approved: isApproved && isMinVendaMet && !alreadyUsed,
             isPlanoAprovado: isApproved,
             isMinVendaMet: isMinVendaMet,
-            valorBruto: valorBruto,
+            valorBruto: totalValorBruto,
             vendaMinima: minVenda,
             msgVenda: msgVenda,
-            statusPlano: alreadyUsed ? "Orçamento já utilizado." : plano.statusPlano,
-            cliente: plano.cliente,
-            vendedor: plano.vendedor,
-            codOrcamento: plano.codOrcamento,
+            statusPlano: combinedStatusPlano,
+            cliente: comumCliente,
+            vendedor: comumVendedor,
+            codOrcamento: combinedCodOrcamentoStr,
             nivelPermitido: nivelPermitido,
             discountPct: discountPct
         });

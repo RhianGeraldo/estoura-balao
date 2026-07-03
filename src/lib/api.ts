@@ -128,12 +128,12 @@ export async function deleteUnidade(id: string) {
   return fetchApi(`unidades?id=${id}`, "DELETE");
 }
 
-export async function validateBudget(codOrcamento: string, unidadeId: string): Promise<{
+export async function validateBudget(codOrcamentos: string[], unidadeId: string): Promise<{
   approved: boolean;
   statusPlano: string;
   cliente: string;
   vendedor: string;
-  codOrcamento: number;
+  codOrcamento: string;
   isPlanoAprovado?: boolean;
   isMinVendaMet?: boolean;
   valorBruto?: number;
@@ -142,7 +142,7 @@ export async function validateBudget(codOrcamento: string, unidadeId: string): P
   nivelPermitido?: 'simples' | 'premium' | null;
   discountPct?: number;
 }> {
-  return fetchApi("validate-budget", "POST", { cod_orcamento: codOrcamento, unidade_id: unidadeId });
+  return fetchApi("validate-budget", "POST", { cod_orcamentos: codOrcamentos, unidade_id: unidadeId });
 }
 
 export async function popBalloon(balloonId: string, codOrcamento?: string, vendedor?: string, cliente?: string) {
