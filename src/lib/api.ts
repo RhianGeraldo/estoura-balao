@@ -17,6 +17,7 @@ export interface ActionPayload {
   valor_maximo_premium?: number;
   venda_minima_premium?: number;
   desconto_max_premium?: number;
+  formas_pagamento_premium?: string[];
   unidades?: string[]; // Array of Unidade IDs
 }
 
@@ -38,6 +39,7 @@ export interface Action {
   valor_maximo_premium?: number;
   venda_minima_premium?: number;
   desconto_max_premium?: number;
+  formas_pagamento_premium?: string[];
   status: string;
   created_at: string;
   created_by_name?: string;

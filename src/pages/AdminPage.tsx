@@ -29,6 +29,7 @@ const defaultValues: ActionPayload = {
   valor_maximo_premium: 0,
   venda_minima_premium: 0,
   desconto_max_premium: 0,
+  formas_pagamento_premium: [],
   unidades: [],
 };
 
@@ -594,6 +595,40 @@ export default function AdminPage() {
                               <Label htmlFor="valor_maximo_premium">Valor Máximo Premium (R$)</Label>
                               <Input id="valor_maximo_premium" type="number" value={form.valor_maximo_premium ?? ""} onChange={(e) => update("valor_maximo_premium", e.target.value)} min={0} />
                             </div>
+                            
+                            <div className="col-span-1 sm:col-span-2 lg:col-span-3 mt-2">
+                              <Label className="mb-2 block">Formas de Pagamento Válidas (Premium)</Label>
+                              <div className="flex flex-wrap gap-2">
+                                {["PIX", "Dinheiro", "Cartão de Crédito", "Cartão de Débito", "Cartão Recorrente"].map((method) => {
+                                  const isSelected = form.formas_pagamento_premium?.includes(method.toLowerCase());
+                                  return (
+                                    <button
+                                      key={method}
+                                      type="button"
+                                      onClick={() => {
+                                        const val = method.toLowerCase();
+                                        const current = form.formas_pagamento_premium || [];
+                                        const next = current.includes(val)
+                                          ? current.filter(m => m !== val)
+                                          : [...current, val];
+                                        setForm(f => ({ ...f, formas_pagamento_premium: next }));
+                                      }}
+                                      className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${
+                                        isSelected 
+                                          ? "bg-amber-500 text-white border-amber-600"
+                                          : "bg-background text-foreground border-border hover:border-amber-500/50"
+                                      }`}
+                                    >
+                                      {method}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                              <p className="text-xs text-muted-foreground mt-1.5">
+                                Se nenhuma opção for selecionada, todas as formas de pagamento serão aceitas.
+                              </p>
+                            </div>
+
                           </div>
                         </div>
                       </div>

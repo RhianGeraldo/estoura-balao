@@ -132,7 +132,8 @@ async function setupDatabase() {
         "valor_minimo_premium NUMERIC DEFAULT 0",
         "valor_maximo_premium NUMERIC DEFAULT 0",
         "venda_minima_premium NUMERIC DEFAULT 0",
-        "desconto_max_premium NUMERIC DEFAULT 0"
+        "desconto_max_premium NUMERIC DEFAULT 0",
+        "formas_pagamento_premium TEXT"
     ];
     for (const col of premiumColumns) {
         try {
@@ -252,7 +253,8 @@ app.post('/api/create-action', authMiddleware, async (req, res) => {
         const { 
             nome, tipo_jogo, unidades,
             orcamento_total, qtd_baloes, qtd_premiados, valor_multiplo, valor_minimo, valor_maximo, venda_minima,
-            orcamento_total_premium, qtd_baloes_premium, qtd_premiados_premium, valor_minimo_premium, valor_maximo_premium, venda_minima_premium, desconto_max_premium
+            orcamento_total_premium, qtd_baloes_premium, qtd_premiados_premium, valor_minimo_premium, valor_maximo_premium, venda_minima_premium, desconto_max_premium,
+            formas_pagamento_premium
         } = req.body;
 
         if (qtd_premiados > qtd_baloes) return res.status(400).json({ error: "Quantidade de premiados não pode ser maior que total de balões" });
@@ -275,11 +277,12 @@ app.post('/api/create-action', authMiddleware, async (req, res) => {
         await db.run(
             `INSERT INTO actions (
                 id, nome, tipo_jogo, orcamento_total, qtd_baloes, qtd_premiados, valor_multiplo, valor_minimo, valor_maximo, venda_minima, created_by,
-                orcamento_total_premium, qtd_baloes_premium, qtd_premiados_premium, valor_minimo_premium, valor_maximo_premium, venda_minima_premium, desconto_max_premium
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                orcamento_total_premium, qtd_baloes_premium, qtd_premiados_premium, valor_minimo_premium, valor_maximo_premium, venda_minima_premium, desconto_max_premium, formas_pagamento_premium
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 actionId, nome, tipoJogo, orcamento_total, qtd_baloes, qtd_premiados, valor_multiplo, valor_minimo, valor_maximo, vMinima, req.user.id,
-                orcamento_total_premium || 0, qtd_baloes_premium || 0, qtd_premiados_premium || 0, valor_minimo_premium || 0, valor_maximo_premium || 0, venda_minima_premium || 0, desconto_max_premium || 0
+                orcamento_total_premium || 0, qtd_baloes_premium || 0, qtd_premiados_premium || 0, valor_minimo_premium || 0, valor_maximo_premium || 0, venda_minima_premium || 0, desconto_max_premium || 0,
+                Array.isArray(formas_pagamento_premium) ? JSON.stringify(formas_pagamento_premium) : null
             ]
         );
 
@@ -689,7 +692,7 @@ app.post('/api/validate-budget', async (req, res) => {
         }
 
         // Check if there is an active campaign and enforce venda_minima and premium rules
-        const action = await db.get("SELECT venda_minima, venda_minima_premium, desconto_max_premium, qtd_baloes_premium FROM actions WHERE status = 'active' ORDER BY created_at DESC LIMIT 1");
+        const action = await db.get("SELECT venda_minima, venda_minima_premium, desconto_max_premium, qtd_baloes_premium, formas_pagamento_premium FROM actions WHERE status = 'active' ORDER BY created_at DESC LIMIT 1");
         
         let nivelPermitido = null;
         if (action) {
@@ -710,6 +713,37 @@ app.post('/api/validate-budget', async (req, res) => {
                     } else {
                         nivelPermitido = "simples";
                     }
+                    
+                    // Validação da Forma de Pagamento
+                    if (nivelPermitido === "premium" && action.formas_pagamento_premium) {
+                        try {
+                            const allowedMethods = JSON.parse(action.formas_pagamento_premium);
+                            if (Array.isArray(allowedMethods) && allowedMethods.length > 0) {
+                                let hasAllowedPayment = false;
+                                if (plano.parcelas && Array.isArray(plano.parcelas)) {
+                                    for (const parcela of plano.parcelas) {
+                                        const pm = String(parcela.formaPagamento || "").toLowerCase();
+                                        if (
+                                            (allowedMethods.includes("pix") && pm.includes("pix")) ||
+                                            (allowedMethods.includes("dinheiro") && pm.includes("dinheiro")) ||
+                                            (allowedMethods.includes("cartão de crédito") && (pm.includes("crédito") || pm.includes("credito"))) ||
+                                            (allowedMethods.includes("cartão de débito") && (pm.includes("débito") || pm.includes("debito"))) ||
+                                            (allowedMethods.includes("cartão recorrente") && pm.includes("recorrente"))
+                                        ) {
+                                            hasAllowedPayment = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                                if (!hasAllowedPayment) {
+                                    nivelPermitido = "simples";
+                                }
+                            }
+                        } catch (e) {
+                            console.error("Erro ao fazer parse de formas_pagamento_premium", e);
+                        }
+                    }
+
                 } else {
                     nivelPermitido = "simples";
                 }
