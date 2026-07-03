@@ -112,6 +112,9 @@ async function setupDatabase() {
     try {
         await db.run("ALTER TABLE balloons ADD COLUMN cliente TEXT;");
     } catch (e) { }
+    try {
+        await db.run("ALTER TABLE balloons ADD COLUMN nivel TEXT DEFAULT 'simples';");
+    } catch (e) { }
     // Alter table if tipo_jogo column does not exist (for backward compatibility)
     try {
         await db.run("ALTER TABLE actions ADD COLUMN tipo_jogo TEXT DEFAULT 'balloon';");
@@ -120,6 +123,23 @@ async function setupDatabase() {
     try {
         await db.run("ALTER TABLE actions ADD COLUMN venda_minima NUMERIC NOT NULL DEFAULT 0;");
     } catch (e) { }
+    
+    // Add premium configuration columns to actions
+    const premiumColumns = [
+        "orcamento_total_premium NUMERIC DEFAULT 0",
+        "qtd_baloes_premium INTEGER DEFAULT 0",
+        "qtd_premiados_premium INTEGER DEFAULT 0",
+        "valor_minimo_premium NUMERIC DEFAULT 0",
+        "valor_maximo_premium NUMERIC DEFAULT 0",
+        "venda_minima_premium NUMERIC DEFAULT 0",
+        "desconto_max_premium NUMERIC DEFAULT 0"
+    ];
+    for (const col of premiumColumns) {
+        try {
+            await db.run(`ALTER TABLE actions ADD COLUMN ${col};`);
+        } catch (e) { }
+    }
+
     // Add nome to users and created_by to actions
     try {
         await db.run("ALTER TABLE users ADD COLUMN nome TEXT;");
@@ -229,53 +249,93 @@ const authMiddleware = (req, res, next) => {
 // POST /create-action
 app.post('/api/create-action', authMiddleware, async (req, res) => {
     try {
-        const { nome, tipo_jogo, orcamento_total, qtd_baloes, qtd_premiados, valor_multiplo, valor_minimo, valor_maximo, venda_minima, unidades } = req.body;
+        const { 
+            nome, tipo_jogo, unidades,
+            orcamento_total, qtd_baloes, qtd_premiados, valor_multiplo, valor_minimo, valor_maximo, venda_minima,
+            orcamento_total_premium, qtd_baloes_premium, qtd_premiados_premium, valor_minimo_premium, valor_maximo_premium, venda_minima_premium, desconto_max_premium
+        } = req.body;
 
         if (qtd_premiados > qtd_baloes) return res.status(400).json({ error: "Quantidade de premiados não pode ser maior que total de balões" });
         if (qtd_premiados * valor_minimo > orcamento_total) return res.status(400).json({ error: "Orçamento insuficiente para os valores mínimos" });
         if (valor_minimo > valor_maximo) return res.status(400).json({ error: "Valor mínimo não pode ser maior que valor máximo" });
+
+        const hasPremium = qtd_baloes_premium > 0;
+        if (hasPremium) {
+            if (qtd_premiados_premium > qtd_baloes_premium) return res.status(400).json({ error: "Quantidade de premiados (Premium) não ser maior que total (Premium)" });
+            if (qtd_premiados_premium * valor_minimo_premium > orcamento_total_premium) return res.status(400).json({ error: "Orçamento insuficiente para prêmios mínimos (Premium)" });
+            if (valor_minimo_premium > valor_maximo_premium) return res.status(400).json({ error: "Valor mínimo (Premium) não pode ser maior que valor máximo (Premium)" });
+        }
 
         const validTypes = ['balloon', 'envelope', 'heart', 'chest', 'roulette'];
         const tipoJogo = validTypes.includes(tipo_jogo) ? tipo_jogo : 'balloon';
 
         const actionId = crypto.randomUUID();
         const vMinima = venda_minima ? Number(venda_minima) : 0;
+        
         await db.run(
-            `INSERT INTO actions (id, nome, tipo_jogo, orcamento_total, qtd_baloes, qtd_premiados, valor_multiplo, valor_minimo, valor_maximo, venda_minima, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [actionId, nome, tipoJogo, orcamento_total, qtd_baloes, qtd_premiados, valor_multiplo, valor_minimo, valor_maximo, vMinima, req.user.id]
+            `INSERT INTO actions (
+                id, nome, tipo_jogo, orcamento_total, qtd_baloes, qtd_premiados, valor_multiplo, valor_minimo, valor_maximo, venda_minima, created_by,
+                orcamento_total_premium, qtd_baloes_premium, qtd_premiados_premium, valor_minimo_premium, valor_maximo_premium, venda_minima_premium, desconto_max_premium
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                actionId, nome, tipoJogo, orcamento_total, qtd_baloes, qtd_premiados, valor_multiplo, valor_minimo, valor_maximo, vMinima, req.user.id,
+                orcamento_total_premium || 0, qtd_baloes_premium || 0, qtd_premiados_premium || 0, valor_minimo_premium || 0, valor_maximo_premium || 0, venda_minima_premium || 0, desconto_max_premium || 0
+            ]
         );
 
         const action = await db.get("SELECT * FROM actions WHERE id = ?", [actionId]);
 
-        const prizeValues = generateBalloonValues(orcamento_total, qtd_premiados, valor_multiplo, valor_minimo, valor_maximo);
-
         const balloons = [];
-        const prizeIndices = new Set();
-        while (prizeIndices.size < qtd_premiados) {
-            prizeIndices.add(Math.floor(Math.random() * qtd_baloes));
+
+        // --- Generate Simple Balloons ---
+        const prizeValuesSimples = generateBalloonValues(orcamento_total, qtd_premiados, valor_multiplo, valor_minimo, valor_maximo);
+        const prizeIndicesSimples = new Set();
+        while (prizeIndicesSimples.size < qtd_premiados) {
+            prizeIndicesSimples.add(Math.floor(Math.random() * qtd_baloes));
         }
-
-        const prizeIdxArray = Array.from(prizeIndices);
-        let prizeCounter = 0;
-
+        const prizeIdxArraySimples = Array.from(prizeIndicesSimples);
+        let prizeCounterSimples = 0;
         for (let i = 0; i < qtd_baloes; i++) {
-            const isPrize = prizeIdxArray.includes(i);
+            const isPrize = prizeIdxArraySimples.includes(i);
             balloons.push({
                 id: crypto.randomUUID(),
                 action_id: actionId,
                 numero: i + 1,
-                valor: isPrize ? prizeValues[prizeCounter] : 0,
+                valor: isPrize ? prizeValuesSimples[prizeCounterSimples] : 0,
                 premiado: isPrize ? 1 : 0,
+                nivel: 'simples'
             });
-            if (isPrize) prizeCounter++;
+            if (isPrize) prizeCounterSimples++;
+        }
+
+        // --- Generate Premium Balloons ---
+        if (hasPremium) {
+            const prizeValuesPremium = generateBalloonValues(orcamento_total_premium, qtd_premiados_premium, valor_multiplo, valor_minimo_premium, valor_maximo_premium);
+            const prizeIndicesPremium = new Set();
+            while (prizeIndicesPremium.size < qtd_premiados_premium) {
+                prizeIndicesPremium.add(Math.floor(Math.random() * qtd_baloes_premium));
+            }
+            const prizeIdxArrayPremium = Array.from(prizeIndicesPremium);
+            let prizeCounterPremium = 0;
+            for (let i = 0; i < qtd_baloes_premium; i++) {
+                const isPrize = prizeIdxArrayPremium.includes(i);
+                balloons.push({
+                    id: crypto.randomUUID(),
+                    action_id: actionId,
+                    numero: qtd_baloes + i + 1,
+                    valor: isPrize ? prizeValuesPremium[prizeCounterPremium] : 0,
+                    premiado: isPrize ? 1 : 0,
+                    nivel: 'premium'
+                });
+                if (isPrize) prizeCounterPremium++;
+            }
         }
 
         const stmt = await db.prepare(
-            `INSERT INTO balloons (id, action_id, numero, valor, premiado) VALUES (?, ?, ?, ?, ?)`
+            `INSERT INTO balloons (id, action_id, numero, valor, premiado, nivel) VALUES (?, ?, ?, ?, ?, ?)`
         );
         for (const b of balloons) {
-            await stmt.run(b.id, b.action_id, b.numero, b.valor, b.premiado);
+            await stmt.run(b.id, b.action_id, b.numero, b.valor, b.premiado, b.nivel);
         }
         await stmt.finalize();
 
@@ -518,7 +578,7 @@ app.get('/api/balloons', async (req, res) => {
         if (!actionId) return res.status(400).json({ error: "action_id required" });
 
         const balloons = await db.all(
-            "SELECT id, numero, estourado, premiado, valor, data_estouro FROM balloons WHERE action_id = ? ORDER BY numero",
+            "SELECT id, numero, estourado, premiado, valor, data_estouro, nivel FROM balloons WHERE action_id = ? ORDER BY numero",
             [actionId]
         );
 
@@ -526,7 +586,8 @@ app.get('/api/balloons', async (req, res) => {
             ...b,
             premiado: b.estourado ? Boolean(b.premiado) : null,
             valor: b.estourado ? b.valor : null,
-            estourado: Boolean(b.estourado)
+            estourado: Boolean(b.estourado),
+            nivel: b.nivel
         }));
 
         res.json({ balloons: safeBalloons });
@@ -615,14 +676,46 @@ app.post('/api/validate-budget', async (req, res) => {
         const precoStr = String(plano.precoFinal || "0").replace(/\./g, "").replace(",", ".");
         const valorBruto = Number(precoStr);
 
-        // Check if there is an active campaign and enforce venda_minima
-        const action = await db.get("SELECT venda_minima FROM actions WHERE status = 'active' ORDER BY created_at DESC LIMIT 1");
-        if (action && action.venda_minima > 0) {
-            minVenda = Number(action.venda_minima);
+        let discountPct = 0;
+        if (plano.tipoDesconto === "%") {
+            const descStr = String(plano.desconto || "0").replace(/\./g, "").replace(",", ".");
+            discountPct = Number(descStr);
+        } else {
+            const precoOriginalStr = String(plano.preco || "0").replace(/\./g, "").replace(",", ".");
+            const precoOriginal = Number(precoOriginalStr);
+            if (precoOriginal > 0) {
+                discountPct = ((precoOriginal - valorBruto) / precoOriginal) * 100;
+            }
+        }
+
+        // Check if there is an active campaign and enforce venda_minima and premium rules
+        const action = await db.get("SELECT venda_minima, venda_minima_premium, desconto_max_premium, qtd_baloes_premium FROM actions WHERE status = 'active' ORDER BY created_at DESC LIMIT 1");
+        
+        let nivelPermitido = null;
+        if (action) {
+            minVenda = Number(action.venda_minima || 0);
             if (valorBruto < minVenda) {
                 isMinVendaMet = false;
                 msgVenda = `O valor do orçamento (R$ ${valorBruto.toFixed(2)}) é inferior à venda mínima da campanha (R$ ${minVenda.toFixed(2)}).`;
+            } else {
+                const hasPremium = (action.qtd_baloes_premium || 0) > 0;
+                if (hasPremium) {
+                    const minVendaPremium = Number(action.venda_minima_premium || 0);
+                    const descMaxPremium = Number(action.desconto_max_premium || 0);
+                    
+                    if (minVendaPremium > 0 && valorBruto >= minVendaPremium) {
+                        nivelPermitido = "premium";
+                    } else if (descMaxPremium > 0 && discountPct <= descMaxPremium) {
+                        nivelPermitido = "premium";
+                    } else {
+                        nivelPermitido = "simples";
+                    }
+                } else {
+                    nivelPermitido = "simples";
+                }
             }
+        } else {
+            nivelPermitido = "simples";
         }
 
         // Block if already used to pop a balloon
@@ -639,6 +732,8 @@ app.post('/api/validate-budget', async (req, res) => {
             cliente: plano.cliente,
             vendedor: plano.vendedor,
             codOrcamento: plano.codOrcamento,
+            nivelPermitido: nivelPermitido,
+            discountPct: discountPct
         });
     } catch (err) {
         console.error(err);

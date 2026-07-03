@@ -10,6 +10,13 @@ export interface ActionPayload {
   valor_minimo: number;
   valor_maximo: number;
   venda_minima: number;
+  orcamento_total_premium?: number;
+  qtd_baloes_premium?: number;
+  qtd_premiados_premium?: number;
+  valor_minimo_premium?: number;
+  valor_maximo_premium?: number;
+  venda_minima_premium?: number;
+  desconto_max_premium?: number;
   unidades?: string[]; // Array of Unidade IDs
 }
 
@@ -24,6 +31,13 @@ export interface Action {
   valor_minimo: number;
   valor_maximo: number;
   venda_minima: number;
+  orcamento_total_premium?: number;
+  qtd_baloes_premium?: number;
+  qtd_premiados_premium?: number;
+  valor_minimo_premium?: number;
+  valor_maximo_premium?: number;
+  venda_minima_premium?: number;
+  desconto_max_premium?: number;
   status: string;
   created_at: string;
   created_by_name?: string;
@@ -44,6 +58,7 @@ export interface Balloon {
   premiado: boolean | null;
   valor: number | null;
   data_estouro: string | null;
+  nivel: 'simples' | 'premium';
 }
 
 export interface Unidade {
@@ -122,6 +137,8 @@ export async function validateBudget(codOrcamento: string, unidadeId: string): P
   valorBruto?: number;
   vendaMinima?: number;
   msgVenda?: string;
+  nivelPermitido?: 'simples' | 'premium' | null;
+  discountPct?: number;
 }> {
   return fetchApi("validate-budget", "POST", { cod_orcamento: codOrcamento, unidade_id: unidadeId });
 }

@@ -22,6 +22,13 @@ const defaultValues: ActionPayload = {
   valor_minimo: 5,
   valor_maximo: 30,
   venda_minima: 700,
+  orcamento_total_premium: 0,
+  qtd_baloes_premium: 0,
+  qtd_premiados_premium: 0,
+  valor_minimo_premium: 0,
+  valor_maximo_premium: 0,
+  venda_minima_premium: 0,
+  desconto_max_premium: 0,
   unidades: [],
 };
 
@@ -116,7 +123,7 @@ export default function AdminPage() {
   };
 
   const update = (field: keyof ActionPayload, value: string) => {
-    const numFields: (keyof ActionPayload)[] = ["orcamento_total", "qtd_baloes", "qtd_premiados", "valor_multiplo", "valor_minimo", "valor_maximo", "venda_minima"];
+    const numFields: (keyof ActionPayload)[] = ["orcamento_total", "qtd_baloes", "qtd_premiados", "valor_multiplo", "valor_minimo", "valor_maximo", "venda_minima", "orcamento_total_premium", "qtd_baloes_premium", "qtd_premiados_premium", "valor_minimo_premium", "valor_maximo_premium", "venda_minima_premium", "desconto_max_premium"];
     if (numFields.includes(field)) {
       // Allow empty string so user can clear the input
       if (value === "") {
@@ -519,34 +526,75 @@ export default function AdminPage() {
                         )}
                       </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
-                        <div>
-                          <Label htmlFor="orcamento">Orçamento Total (R$)</Label>
-                          <Input id="orcamento" type="number" value={form.orcamento_total ?? ""} onChange={(e) => update("orcamento_total", e.target.value)} min={1} required />
+                      <div className="space-y-4">
+                        <div className="border-l-4 border-primary pl-4">
+                          <h3 className="font-bold text-lg mb-2 flex items-center gap-2">Configuração Nível Simples</h3>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                            <div>
+                              <Label htmlFor="orcamento">Orçamento Total (R$)</Label>
+                              <Input id="orcamento" type="number" value={form.orcamento_total ?? ""} onChange={(e) => update("orcamento_total", e.target.value)} min={1} required />
+                            </div>
+                            <div>
+                              <Label htmlFor="qtd_baloes">Qtd. {getGameTypeConfig(form.tipo_jogo || "balloon").labelPlural}</Label>
+                              <Input id="qtd_baloes" type="number" value={form.qtd_baloes ?? ""} onChange={(e) => update("qtd_baloes", e.target.value)} min={1} required />
+                            </div>
+                            <div>
+                              <Label htmlFor="qtd_premiados">Qtd. Premiados</Label>
+                              <Input id="qtd_premiados" type="number" value={form.qtd_premiados ?? ""} onChange={(e) => update("qtd_premiados", e.target.value)} min={1} required />
+                            </div>
+                            <div>
+                              <Label htmlFor="valor_multiplo">Valor Múltiplo (R$)</Label>
+                              <Input id="valor_multiplo" type="number" value={form.valor_multiplo ?? ""} onChange={(e) => update("valor_multiplo", e.target.value)} min={1} required />
+                            </div>
+                            <div>
+                              <Label htmlFor="valor_minimo">Valor Mínimo (R$)</Label>
+                              <Input id="valor_minimo" type="number" value={form.valor_minimo ?? ""} onChange={(e) => update("valor_minimo", e.target.value)} min={1} required />
+                            </div>
+                            <div>
+                              <Label htmlFor="valor_maximo">Valor Máximo (R$)</Label>
+                              <Input id="valor_maximo" type="number" value={form.valor_maximo ?? ""} onChange={(e) => update("valor_maximo", e.target.value)} min={1} required />
+                            </div>
+                            <div>
+                              <Label htmlFor="venda_minima">Venda Mínima p/ Estourar (R$)</Label>
+                              <Input id="venda_minima" type="number" value={form.venda_minima ?? ""} onChange={(e) => update("venda_minima", e.target.value)} min={0} required />
+                            </div>
+                          </div>
                         </div>
-                        <div>
-                          <Label htmlFor="qtd_baloes">Qtd. {getGameTypeConfig(form.tipo_jogo || "balloon").labelPlural}</Label>
-                          <Input id="qtd_baloes" type="number" value={form.qtd_baloes ?? ""} onChange={(e) => update("qtd_baloes", e.target.value)} min={1} required />
-                        </div>
-                        <div>
-                          <Label htmlFor="qtd_premiados">Qtd. Premiados</Label>
-                          <Input id="qtd_premiados" type="number" value={form.qtd_premiados ?? ""} onChange={(e) => update("qtd_premiados", e.target.value)} min={1} required />
-                        </div>
-                        <div>
-                          <Label htmlFor="valor_multiplo">Valor Múltiplo (R$)</Label>
-                          <Input id="valor_multiplo" type="number" value={form.valor_multiplo ?? ""} onChange={(e) => update("valor_multiplo", e.target.value)} min={1} required />
-                        </div>
-                        <div>
-                          <Label htmlFor="valor_minimo">Valor Mínimo (R$)</Label>
-                          <Input id="valor_minimo" type="number" value={form.valor_minimo ?? ""} onChange={(e) => update("valor_minimo", e.target.value)} min={1} required />
-                        </div>
-                        <div>
-                          <Label htmlFor="valor_maximo">Valor Máximo (R$)</Label>
-                          <Input id="valor_maximo" type="number" value={form.valor_maximo ?? ""} onChange={(e) => update("valor_maximo", e.target.value)} min={1} required />
-                        </div>
-                        <div>
-                          <Label htmlFor="venda_minima">Venda Mínima p/ Estourar (R$)</Label>
-                          <Input id="venda_minima" type="number" value={form.venda_minima ?? ""} onChange={(e) => update("venda_minima", e.target.value)} min={0} required />
+
+                        <div className="border-l-4 border-amber-500 pl-4 mt-6">
+                          <h3 className="font-bold text-lg mb-2 flex items-center gap-2">Configuração Nível Premium (Opcional)</h3>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                            <div>
+                              <Label htmlFor="venda_minima_premium">Venda Mínima Premium (R$)</Label>
+                              <Input id="venda_minima_premium" type="number" value={form.venda_minima_premium ?? ""} onChange={(e) => update("venda_minima_premium", e.target.value)} min={0} />
+                            </div>
+                            <div>
+                              <Label htmlFor="desconto_max_premium">% Desconto Máx. Premium</Label>
+                              <Input id="desconto_max_premium" type="number" value={form.desconto_max_premium ?? ""} onChange={(e) => update("desconto_max_premium", e.target.value)} min={0} max={100} />
+                            </div>
+                            <div className="hidden lg:block"></div>
+                            
+                            <div>
+                              <Label htmlFor="orcamento_premium">Orçamento Total Premium (R$)</Label>
+                              <Input id="orcamento_premium" type="number" value={form.orcamento_total_premium ?? ""} onChange={(e) => update("orcamento_total_premium", e.target.value)} min={0} />
+                            </div>
+                            <div>
+                              <Label htmlFor="qtd_baloes_premium">Qtd. {getGameTypeConfig(form.tipo_jogo || "balloon").labelPlural} Premium</Label>
+                              <Input id="qtd_baloes_premium" type="number" value={form.qtd_baloes_premium ?? ""} onChange={(e) => update("qtd_baloes_premium", e.target.value)} min={0} />
+                            </div>
+                            <div>
+                              <Label htmlFor="qtd_premiados_premium">Qtd. Premiados Premium</Label>
+                              <Input id="qtd_premiados_premium" type="number" value={form.qtd_premiados_premium ?? ""} onChange={(e) => update("qtd_premiados_premium", e.target.value)} min={0} />
+                            </div>
+                            <div>
+                              <Label htmlFor="valor_minimo_premium">Valor Mínimo Premium (R$)</Label>
+                              <Input id="valor_minimo_premium" type="number" value={form.valor_minimo_premium ?? ""} onChange={(e) => update("valor_minimo_premium", e.target.value)} min={0} />
+                            </div>
+                            <div>
+                              <Label htmlFor="valor_maximo_premium">Valor Máximo Premium (R$)</Label>
+                              <Input id="valor_maximo_premium" type="number" value={form.valor_maximo_premium ?? ""} onChange={(e) => update("valor_maximo_premium", e.target.value)} min={0} />
+                            </div>
+                          </div>
                         </div>
                       </div>
 

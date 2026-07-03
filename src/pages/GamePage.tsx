@@ -23,6 +23,8 @@ interface BudgetValidation {
   valorBruto?: number;
   vendaMinima?: number;
   msgVenda?: string;
+  nivelPermitido?: 'simples' | 'premium' | null;
+  discountPct?: number;
 }
 
 export default function GamePage() {
@@ -203,9 +205,13 @@ export default function GamePage() {
     );
   }
 
-  const balloons = balloonsData?.balloons || [];
+  const allBalloons = balloonsData?.balloons || [];
   const unidades = action?.unidades || [];
   const canPop = budgetValidation?.approved === true;
+  
+  const balloons = canPop && budgetValidation?.nivelPermitido
+    ? allBalloons.filter((b: any) => b.nivel === budgetValidation.nivelPermitido)
+    : allBalloons.filter((b: any) => b.nivel === 'simples' || !b.nivel); // Fallback for old records without nivel
 
   // For roulette: pin the active ballot by ID so the wheel isn't replaced
   // mid-animation when the query re-renders.
@@ -368,9 +374,20 @@ export default function GamePage() {
                   <p className="font-display font-bold text-foreground">
                     Orçamento #{budgetValidation.codOrcamento}
                   </p>
-                  <p className="text-sm text-muted-foreground">
-                    Vendedor: <span className="font-medium text-foreground">{budgetValidation.vendedor}</span>
-                  </p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <p className="text-sm text-muted-foreground">
+                      Vendedor: <span className="font-medium text-foreground">{budgetValidation.vendedor}</span>
+                    </p>
+                    {budgetValidation.nivelPermitido && (
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${
+                        budgetValidation.nivelPermitido === 'premium' 
+                          ? 'bg-amber-500/20 text-amber-600 border border-amber-500/30' 
+                          : 'bg-primary/20 text-primary border border-primary/30'
+                      }`}>
+                        Nível: {budgetValidation.nivelPermitido === 'premium' ? 'Premium' : 'Simples'}
+                      </span>
+                    )}
+                  </div>
                   <p className="text-xs text-muted-foreground mt-0.5">
                     Cliente: {budgetValidation.cliente}
                   </p>
