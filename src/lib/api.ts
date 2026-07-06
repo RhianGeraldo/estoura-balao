@@ -18,6 +18,8 @@ export interface ActionPayload {
   venda_minima_premium?: number;
   desconto_max_premium?: number;
   formas_pagamento_premium?: string[];
+  qtd_indicacoes_simples?: number;
+  qtd_indicacoes_premium?: number;
   unidades?: string[]; // Array of Unidade IDs
 }
 
@@ -40,6 +42,8 @@ export interface Action {
   venda_minima_premium?: number;
   desconto_max_premium?: number;
   formas_pagamento_premium?: string[];
+  qtd_indicacoes_simples?: number;
+  qtd_indicacoes_premium?: number;
   status: string;
   created_at: string;
   created_by_name?: string;
@@ -100,7 +104,7 @@ export async function createAction(payload: ActionPayload) {
   return fetchApi("create-action", "POST", payload);
 }
 
-export async function updateAction(id: string, payload: { nome: string; unidades: string[] }) {
+export async function updateAction(id: string, payload: Partial<ActionPayload>) {
   return fetchApi(`actions/${id}`, "PUT", payload);
 }
 
@@ -145,8 +149,24 @@ export async function validateBudget(codOrcamentos: string[], unidadeId: string)
   return fetchApi("validate-budget", "POST", { cod_orcamentos: codOrcamentos, unidade_id: unidadeId });
 }
 
-export async function popBalloon(balloonId: string, codOrcamento?: string, vendedor?: string, cliente?: string) {
-  return fetchApi("pop-balloon", "POST", { balloon_id: balloonId, cod_orcamento: codOrcamento, vendedor, cliente });
+export async function validateCrc(codCrc: string, dtInicio: string, dtFim: string, unidadeId: string): Promise<{
+  approved: boolean;
+  totalIndicacoes: number;
+  indicacoesGastas: number;
+  indicacoesDisponiveis: number;
+  crcNome?: string;
+  qtd_indicacoes_simples: number;
+  qtd_indicacoes_premium: number;
+}> {
+  return fetchApi("validate-crc", "POST", { cod_crc: codCrc, dt_inicio: dtInicio, dt_fim: dtFim, unidade_id: unidadeId });
+}
+
+export async function getUsuarios(unidadeId: string): Promise<{ usuarios: { cod_usuario: string; nome: string }[] }> {
+  return fetchApi(`usuarios?unidade_id=${unidadeId}`, "GET");
+}
+
+export async function popBalloon(balloonId: string, codOrcamento?: string, vendedor?: string, cliente?: string, tipoEstouro?: 'orcamento' | 'crc', codCrc?: string, nivelBalao?: string) {
+  return fetchApi("pop-balloon", "POST", { balloon_id: balloonId, cod_orcamento: codOrcamento, vendedor, cliente, tipo_estouro: tipoEstouro, cod_crc: codCrc, nivel_balao: nivelBalao });
 }
 
 export async function getVendedoresStats(actionId: string): Promise<{ history: { vendedor: string, cliente: string, cod_orcamento: string, valor: number, premiado: boolean, data_estouro: string }[] }> {

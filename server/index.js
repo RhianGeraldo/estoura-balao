@@ -140,6 +140,29 @@ async function setupDatabase() {
             await db.run(`ALTER TABLE actions ADD COLUMN ${col};`);
         } catch (e) { }
     }
+    
+    // Add CRC indications config columns to actions
+    try {
+        await db.run("ALTER TABLE actions ADD COLUMN qtd_indicacoes_simples INTEGER DEFAULT 0;");
+    } catch (e) { }
+    try {
+        await db.run("ALTER TABLE actions ADD COLUMN qtd_indicacoes_premium INTEGER DEFAULT 0;");
+    } catch (e) { }
+
+    // Add CRC Usage table
+    try {
+        await db.run(`
+            CREATE TABLE IF NOT EXISTS crc_usage (
+                action_id TEXT,
+                crc_codigo TEXT,
+                indicacoes_gastas INTEGER DEFAULT 0,
+                PRIMARY KEY (action_id, crc_codigo),
+                FOREIGN KEY (action_id) REFERENCES actions (id) ON DELETE CASCADE
+            )
+        `);
+    } catch (e) {
+        console.error("Error creating crc_usage table:", e);
+    }
 
     // Add nome to users and created_by to actions
     try {
@@ -254,7 +277,8 @@ app.post('/api/create-action', authMiddleware, async (req, res) => {
             nome, tipo_jogo, unidades,
             orcamento_total, qtd_baloes, qtd_premiados, valor_multiplo, valor_minimo, valor_maximo, venda_minima,
             orcamento_total_premium, qtd_baloes_premium, qtd_premiados_premium, valor_minimo_premium, valor_maximo_premium, venda_minima_premium, desconto_max_premium,
-            formas_pagamento_premium
+            formas_pagamento_premium,
+            qtd_indicacoes_simples, qtd_indicacoes_premium
         } = req.body;
 
         if (qtd_premiados > qtd_baloes) return res.status(400).json({ error: "Quantidade de premiados não pode ser maior que total de balões" });
@@ -277,12 +301,14 @@ app.post('/api/create-action', authMiddleware, async (req, res) => {
         await db.run(
             `INSERT INTO actions (
                 id, nome, tipo_jogo, orcamento_total, qtd_baloes, qtd_premiados, valor_multiplo, valor_minimo, valor_maximo, venda_minima, created_by,
-                orcamento_total_premium, qtd_baloes_premium, qtd_premiados_premium, valor_minimo_premium, valor_maximo_premium, venda_minima_premium, desconto_max_premium, formas_pagamento_premium
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                orcamento_total_premium, qtd_baloes_premium, qtd_premiados_premium, valor_minimo_premium, valor_maximo_premium, venda_minima_premium, desconto_max_premium, formas_pagamento_premium,
+                qtd_indicacoes_simples, qtd_indicacoes_premium
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 actionId, nome, tipoJogo, orcamento_total, qtd_baloes, qtd_premiados, valor_multiplo, valor_minimo, valor_maximo, vMinima, req.user.id,
                 orcamento_total_premium || 0, qtd_baloes_premium || 0, qtd_premiados_premium || 0, valor_minimo_premium || 0, valor_maximo_premium || 0, venda_minima_premium || 0, desconto_max_premium || 0,
-                Array.isArray(formas_pagamento_premium) ? JSON.stringify(formas_pagamento_premium) : null
+                Array.isArray(formas_pagamento_premium) ? JSON.stringify(formas_pagamento_premium) : null,
+                qtd_indicacoes_simples || 0, qtd_indicacoes_premium || 0
             ]
         );
 
@@ -362,7 +388,7 @@ app.post('/api/create-action', authMiddleware, async (req, res) => {
 // PUT /actions/:id (Update name and restricted units)
 app.put('/api/actions/:id', authMiddleware, async (req, res) => {
     const { id } = req.params;
-    const { nome, unidades } = req.body;
+    const { nome, unidades, qtd_indicacoes_simples, qtd_indicacoes_premium } = req.body;
 
     if (!nome) {
         return res.status(400).json({ error: 'Nome não informado' });
@@ -372,7 +398,10 @@ app.put('/api/actions/:id', authMiddleware, async (req, res) => {
         const action = await db.get("SELECT * FROM actions WHERE id = ?", [id]);
         if (!action) return res.status(404).json({ error: 'Ação não encontrada' });
 
-        await db.run("UPDATE actions SET nome = ? WHERE id = ?", [nome, id]);
+        await db.run(
+            "UPDATE actions SET nome = ?, qtd_indicacoes_simples = COALESCE(?, qtd_indicacoes_simples), qtd_indicacoes_premium = COALESCE(?, qtd_indicacoes_premium) WHERE id = ?", 
+            [nome, qtd_indicacoes_simples, qtd_indicacoes_premium, id]
+        );
 
         await db.run("DELETE FROM action_unidades WHERE action_id = ?", [id]);
 
@@ -818,20 +847,138 @@ app.post('/api/validate-budget', async (req, res) => {
     }
 });
 
+// GET /usuarios
+app.get('/api/usuarios', async (req, res) => {
+    try {
+        const { unidade_id } = req.query;
+        if (!unidade_id) {
+            return res.status(400).json({ error: "Falta o parâmetro unidade_id" });
+        }
+
+        const unidade = await db.get("SELECT token FROM unidades WHERE id = ?", [unidade_id]);
+        if (!unidade) return res.status(404).json({ error: "Unidade não encontrada" });
+
+        const apiUrl = `https://app.bellesoftware.com.br/api/release/controller/IntegracaoExterna/v1.0/usuario/listar?codEstab=1`;
+        const fetchResult = await fetch(apiUrl, { headers: { "Authorization": unidade.token } });
+        
+        if (!fetchResult.ok) {
+            console.error("Erro na API da Belle Software:", await fetchResult.text());
+            return res.status(500).json({ error: "Falha ao buscar usuários na API Belle" });
+        }
+        
+        const usuarios = await fetchResult.json();
+        console.log("Usuarios da Belle:", typeof usuarios, Array.isArray(usuarios) ? usuarios.length : "Not array", usuarios);
+        res.json({ usuarios });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST /validate-crc
+app.post('/api/validate-crc', async (req, res) => {
+    try {
+        console.log("=== /api/validate-crc RECEIVED ===", req.body);
+        const { cod_crc, dt_inicio, dt_fim, unidade_id } = req.body;
+        if (!cod_crc || !dt_inicio || !dt_fim || !unidade_id) {
+            return res.status(400).json({ error: "Faltam parâmetros obrigatórios" });
+        }
+
+        const unidade = await db.get("SELECT token FROM unidades WHERE id = ?", [unidade_id]);
+        if (!unidade) return res.status(404).json({ error: "Unidade não encontrada" });
+
+        const action = await db.get("SELECT id, qtd_indicacoes_simples, qtd_indicacoes_premium FROM actions WHERE status = 'active' ORDER BY created_at DESC LIMIT 1");
+        if (!action) return res.status(404).json({ error: "Nenhuma campanha ativa encontrada" });
+
+        let totalIndicacoes = 0;
+        let crcNome = "";
+        const dtInicioFmt = dt_inicio; // Formato dd/mm/yyyy
+        const dtFimFmt = dt_fim;
+        
+        const apiUrl = `https://app.bellesoftware.com.br/api/release/controller/IntegracaoExterna/v1.0/listagem_comercial_clientes?dtInicio=${dtInicioFmt}&dtFim=${dtFimFmt}`;
+        console.log(`Fetching from Belle: ${apiUrl}`);
+        
+        try {
+            const fetchResult = await fetch(apiUrl, { headers: { "Authorization": unidade.token } });
+            if (!fetchResult.ok) {
+                console.error("API falhou para", apiUrl, await fetchResult.text());
+                return res.status(500).json({ error: "Falha na API da Belle Software" });
+            }
+            
+            const clientes = await fetchResult.json();
+            console.log(`Belle response type:`, typeof clientes, Array.isArray(clientes) ? `Array[${clientes.length}]` : 'Not array');
+            
+            if (Array.isArray(clientes)) {
+                for (const cli of clientes) {
+                    const validOrigins = ["Cliente", "Profissional", "Usuário", "Usuario"];
+                    const cleanCodCrc = String(cod_crc).trim();
+                    // In listagem_comercial_clientes, the property is origemCliente and tipoOrigem
+                    if (validOrigins.includes(cli.tipoOrigem) && cli.origemCliente && String(cli.origemCliente).includes(cleanCodCrc)) {
+                        console.log(`Matched! origemCliente: ${cli.origemCliente}, tipoOrigem: ${cli.tipoOrigem}`);
+                        totalIndicacoes++;
+                        if (!crcNome && String(cli.origemCliente).includes("-")) {
+                            crcNome = String(cli.origemCliente).split("-").slice(1).join("-").trim();
+                        }
+                    }
+                }
+            }
+        } catch (err) {
+            console.error("Erro ao buscar listagem comercial:", err);
+            return res.status(500).json({ error: "Erro de rede ao validar clientes" });
+        }
+
+        const usage = await db.get("SELECT indicacoes_gastas FROM crc_usage WHERE action_id = ? AND crc_codigo = ?", [action.id, String(cod_crc)]);
+        const indicacoesGastas = usage ? usage.indicacoes_gastas : 0;
+        const indicacoesDisponiveis = totalIndicacoes - indicacoesGastas;
+
+        res.json({
+            approved: true,
+            totalIndicacoes,
+            indicacoesGastas,
+            indicacoesDisponiveis,
+            crcNome,
+            qtd_indicacoes_simples: action.qtd_indicacoes_simples || 0,
+            qtd_indicacoes_premium: action.qtd_indicacoes_premium || 0
+        });
+
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // POST /pop-balloon
 app.post('/api/pop-balloon', async (req, res) => {
     try {
-        const { balloon_id, user_id, cod_orcamento, vendedor, cliente } = req.body;
-        const poppedUserId = cod_orcamento || user_id || null;
+        const { balloon_id, user_id, cod_orcamento, vendedor, cliente, tipo_estouro, cod_crc, nivel_balao } = req.body;
+        
+        let poppedUserId = null;
+        if (tipo_estouro === 'crc') {
+            poppedUserId = `CRC_${cod_crc}_${new Date().getTime()}`;
+        } else {
+            poppedUserId = cod_orcamento || user_id || null;
+        }
 
         const balloon = await db.get("SELECT * FROM balloons WHERE id = ?", [balloon_id]);
         if (!balloon) return res.status(404).json({ error: "Balão não encontrado!" });
         if (balloon.estourado) return res.status(400).json({ error: "Balão já estourado!", balloon });
 
-        if (poppedUserId) {
+        if (tipo_estouro !== 'crc' && poppedUserId) {
             const alreadyPopped = await db.get("SELECT id FROM balloons WHERE user_id = ? AND estourado = 1", [String(poppedUserId)]);
             if (alreadyPopped) {
                 return res.status(400).json({ error: "Este orçamento já estourou o limite de balões disponíveis (1)." });
+            }
+        }
+
+        if (tipo_estouro === 'crc') {
+            const action = await db.get("SELECT * FROM actions WHERE id = ?", [balloon.action_id]);
+            const custo = nivel_balao === 'premium' ? action.qtd_indicacoes_premium : action.qtd_indicacoes_simples;
+            
+            const usage = await db.get("SELECT indicacoes_gastas FROM crc_usage WHERE action_id = ? AND crc_codigo = ?", [balloon.action_id, String(cod_crc)]);
+            if (usage) {
+                await db.run("UPDATE crc_usage SET indicacoes_gastas = indicacoes_gastas + ? WHERE action_id = ? AND crc_codigo = ?", [custo, balloon.action_id, String(cod_crc)]);
+            } else {
+                await db.run("INSERT INTO crc_usage (action_id, crc_codigo, indicacoes_gastas) VALUES (?, ?, ?)", [balloon.action_id, String(cod_crc), custo]);
             }
         }
 

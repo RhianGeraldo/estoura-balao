@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { PartyPopper, Trophy, Target, DollarSign, XCircle, Building2, Trash2, Plus, ChevronDown, ChevronUp, LogOut, User, Edit, CheckCircle } from "lucide-react";
+import { PartyPopper, Trophy, Target, DollarSign, XCircle, Building2, Trash2, Plus, ChevronDown, ChevronUp, LogOut, User, Users, Edit, CheckCircle } from "lucide-react";
 
 const defaultValues: ActionPayload = {
   nome: "",
@@ -30,6 +30,8 @@ const defaultValues: ActionPayload = {
   venda_minima_premium: 0,
   desconto_max_premium: 0,
   formas_pagamento_premium: [],
+  qtd_indicacoes_simples: 20,
+  qtd_indicacoes_premium: 50,
   unidades: [],
 };
 
@@ -124,7 +126,7 @@ export default function AdminPage() {
   };
 
   const update = (field: keyof ActionPayload, value: string) => {
-    const numFields: (keyof ActionPayload)[] = ["orcamento_total", "qtd_baloes", "qtd_premiados", "valor_multiplo", "valor_minimo", "valor_maximo", "venda_minima", "orcamento_total_premium", "qtd_baloes_premium", "qtd_premiados_premium", "valor_minimo_premium", "valor_maximo_premium", "venda_minima_premium", "desconto_max_premium"];
+    const numFields: (keyof ActionPayload)[] = ["orcamento_total", "qtd_baloes", "qtd_premiados", "valor_multiplo", "valor_minimo", "valor_maximo", "venda_minima", "orcamento_total_premium", "qtd_baloes_premium", "qtd_premiados_premium", "valor_minimo_premium", "valor_maximo_premium", "venda_minima_premium", "desconto_max_premium", "qtd_indicacoes_simples", "qtd_indicacoes_premium"];
     if (numFields.includes(field)) {
       // Allow empty string so user can clear the input
       if (value === "") {
@@ -258,13 +260,20 @@ export default function AdminPage() {
                           Unidades participantes: {action.unidades.map(u => u.nome).join(', ')}
                         </CardDescription>
                       )}
+                      {(action.qtd_indicacoes_simples > 0 || action.qtd_indicacoes_premium > 0) && (
+                        <div className="mt-2 text-sm text-muted-foreground flex items-center gap-4">
+                          <span className="font-semibold text-foreground flex items-center gap-1"><Users className="h-4 w-4 text-primary" /> Regras CRC:</span>
+                          {action.qtd_indicacoes_simples > 0 && <span>Simples = {action.qtd_indicacoes_simples}</span>}
+                          {action.qtd_indicacoes_premium > 0 && <span>Premium = {action.qtd_indicacoes_premium}</span>}
+                        </div>
+                      )}
                     </CardHeader>
                     <CardContent>
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4">
                         <StatCard icon={<Target className="h-5 w-5" />} label="Qtd de Itens" value={stats?.total_baloes ?? 0} />
                         <StatCard icon={<PartyPopper className="h-5 w-5" />} label="Abertos" value={stats?.estourados ?? 0} />
-                        <StatCard icon={<DollarSign className="h-5 w-5" />} label="Distribuído" value={`R$ ${(stats?.total_distribuido ?? 0).toFixed(2)}`} />
-                        <StatCard icon={<DollarSign className="h-5 w-5" />} label="Restante" value={`R$ ${((action.orcamento_total || 0) - (stats?.total_distribuido ?? 0)).toFixed(2)}`} />
+                        <StatCard icon={<DollarSign className="h-5 w-5" />} label="Distribuído" value={`R$ ${(stats?.distribuido_grana ?? 0).toFixed(2)}`} />
+                        <StatCard icon={<DollarSign className="h-5 w-5" />} label="Restante" value={`R$ ${(((action.orcamento_total || 0) + (action.orcamento_total_premium || 0)) - (stats?.distribuido_grana ?? 0)).toFixed(2)}`} />
                       </div>
 
                       {/* Popped History and Rankings Section */}
@@ -272,7 +281,7 @@ export default function AdminPage() {
                         <div>
                           <h3 className="font-display font-bold text-lg mb-4 flex items-center gap-2">
                             <Trophy className="h-5 w-5 text-yellow-500" />
-                            Ranking de Vendedores
+                            Ranking (Vendas / CRC)
                           </h3>
                           <SellerRankings actionId={action.id} />
                         </div>
@@ -559,6 +568,10 @@ export default function AdminPage() {
                               <Label htmlFor="venda_minima">Venda Mínima p/ Estourar (R$)</Label>
                               <Input id="venda_minima" type="number" value={form.venda_minima ?? ""} onChange={(e) => update("venda_minima", e.target.value)} min={0} required />
                             </div>
+                            <div>
+                              <Label htmlFor="qtd_indicacoes_simples">Qtd. Indicações p/ Estourar</Label>
+                              <Input id="qtd_indicacoes_simples" type="number" value={form.qtd_indicacoes_simples ?? ""} onChange={(e) => update("qtd_indicacoes_simples", e.target.value)} min={0} required />
+                            </div>
                           </div>
                         </div>
 
@@ -573,7 +586,10 @@ export default function AdminPage() {
                               <Label htmlFor="desconto_max_premium">% Desconto Máx. Premium</Label>
                               <Input id="desconto_max_premium" type="number" value={form.desconto_max_premium ?? ""} onChange={(e) => update("desconto_max_premium", e.target.value)} min={0} max={100} />
                             </div>
-                            <div className="hidden lg:block"></div>
+                            <div>
+                              <Label htmlFor="qtd_indicacoes_premium">Qtd. Indicações p/ Estourar Premium</Label>
+                              <Input id="qtd_indicacoes_premium" type="number" value={form.qtd_indicacoes_premium ?? ""} onChange={(e) => update("qtd_indicacoes_premium", e.target.value)} min={0} />
+                            </div>
                             
                             <div>
                               <Label htmlFor="orcamento_premium">Orçamento Total Premium (R$)</Label>
@@ -929,7 +945,9 @@ function PoppedHistory({ actionId, gameType }: { actionId: string, gameType: str
       {data.history.map((item, index) => (
         <div key={index} className="flex flex-col rounded-md border border-border bg-muted/30 p-3 text-sm">
           <div className="flex items-center justify-between mb-2">
-            <span className="font-bold text-foreground">#{item.cod_orcamento}</span>
+            <span className="font-bold text-foreground">
+              {item.cod_orcamento?.startsWith('CRC_') ? 'Resgate CRC' : `#${item.cod_orcamento}`}
+            </span>
             <span className={`font-bold ${item.premiado ? 'text-primary' : 'text-muted-foreground'}`}>
               {item.premiado ? `R$ ${item.valor.toFixed(2)}` : 'Não Premiado'}
             </span>

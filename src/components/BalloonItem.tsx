@@ -49,10 +49,12 @@ function BalloonItemVisual({ balloon, index, onPop, isPopping }: Omit<GameItemPr
   const hash = balloon.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
   const color = BALLOON_COLORS[hash % BALLOON_COLORS.length];
 
+  const isPremium = balloon.nivel === 'premium';
+  
   if (balloon.estourado) {
     return (
       <motion.div
-        className="flex flex-col items-center justify-center aspect-square w-20 sm:w-24 shrink-0 rounded-2xl bg-muted/50 border border-border p-2"
+        className={`flex flex-col items-center justify-center aspect-square w-20 sm:w-24 shrink-0 rounded-2xl bg-muted/50 border p-2 ${isPremium ? 'border-amber-400' : 'border-border'}`}
         initial={{ scale: 0.8 }}
         animate={{ scale: 1 }}
       >
@@ -72,7 +74,7 @@ function BalloonItemVisual({ balloon, index, onPop, isPopping }: Omit<GameItemPr
     <motion.button
       onClick={onPop}
       disabled={isPopping}
-      className={`relative aspect-square w-20 sm:w-24 shrink-0 rounded-full ${color} cursor-pointer shadow-lg hover:shadow-xl transition-shadow flex items-center justify-center group disabled:opacity-60`}
+      className={`relative aspect-square w-20 sm:w-24 shrink-0 rounded-full ${isPremium ? 'bg-gradient-to-br from-amber-400 to-amber-600 shadow-[0_0_15px_rgba(251,191,36,0.6)]' : color} cursor-pointer shadow-lg hover:shadow-xl transition-shadow flex items-center justify-center group disabled:opacity-60`}
       whileHover={{ scale: 1.1, y: -4 }}
       whileTap={{ scale: 0.9 }}
       animate={{ y: [0, -6, 0] }}
@@ -85,6 +87,10 @@ function BalloonItemVisual({ balloon, index, onPop, isPopping }: Omit<GameItemPr
 
       {/* Balloon string */}
       <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 w-[2px] h-4 bg-foreground/20" />
+
+      {isPremium && (
+        <span className="absolute -top-2 -right-1 text-lg drop-shadow-md group-hover:scale-125 transition-transform">👑</span>
+      )}
 
       {/* Number */}
       <span className="font-display font-bold text-primary-foreground text-sm group-hover:scale-110 transition-transform">

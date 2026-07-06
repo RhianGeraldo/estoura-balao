@@ -1,8 +1,8 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getActiveActions, getBalloons, popBalloon, validateBudget, type Balloon, type Unidade } from "@/lib/api";
+import { getActiveActions, getBalloons, popBalloon, validateBudget, validateCrc, getUsuarios, type Balloon, type Unidade } from "@/lib/api";
 import { motion, AnimatePresence } from "framer-motion";
-import { PartyPopper, Frown, Search, CheckCircle, XCircle, Loader2 } from "lucide-react";
+import { PartyPopper, Frown, Search, CheckCircle, XCircle, Loader2, Calendar } from "lucide-react";
 import GameItem from "@/components/BalloonItem";
 import { getGameTypeConfig, type GameType } from "@/lib/gameTypes";
 import { Input } from "@/components/ui/input";
@@ -17,7 +17,7 @@ interface BudgetValidation {
   statusPlano: string;
   cliente: string;
   vendedor: string;
-  codOrcamento: string[];
+  codOrcamento: string;
   isPlanoAprovado?: boolean;
   isMinVendaMet?: boolean;
   valorBruto?: number;
@@ -32,7 +32,27 @@ export default function GamePage() {
   const [selectedUnidade, setSelectedUnidade] = useState("");
   const [codOrcamentos, setCodOrcamentos] = useState<string[]>([""]);
   const [budgetValidation, setBudgetValidation] = useState<BudgetValidation | null>(null);
-  const [poppedResult, setPoppedResult] = useState<{ show: boolean; premiado: boolean; valor: number; codOrcamento: string | null; vendedor: string | null }>({
+  const [validationType, setValidationType] = useState<'orcamento' | 'crc'>('orcamento');
+  
+  // CRC states
+  const [codCrc, setCodCrc] = useState<string>("");
+  const [dtInicio, setDtInicio] = useState<string>("");
+  const [dtFim, setDtFim] = useState<string>(() => {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth() + 1, 0).toLocaleDateString('pt-BR');
+  });
+  const [crcValidation, setCrcValidation] = useState<{
+    approved: boolean;
+    totalIndicacoes: number;
+    indicacoesGastas: number;
+    indicacoesDisponiveis: number;
+    qtd_indicacoes_simples: number;
+    qtd_indicacoes_premium: number;
+  } | null>(null);
+
+  const [isUserSearchOpen, setIsUserSearchOpen] = useState(false);
+
+  const [poppedResult, setPoppedResult] = useState<{ show: boolean; premiado: boolean; valor: number; codOrcamento: string | null; vendedor: string | null; codCrc?: string | null; crcNome?: string | null }>({
     show: false,
     premiado: false,
     valor: 0,
@@ -62,7 +82,7 @@ export default function GamePage() {
   const [rouletteActiveBalloonId, setRouletteActiveBalloonId] = useState<string | null>(null);
   // Stores the result from the API until the wheel animation finishes
   const [pendingRouletteResult, setPendingRouletteResult] = useState<{
-    premiado: boolean; valor: number; codOrcamento: string | null; vendedor: string | null;
+    premiado: boolean; valor: number; codOrcamento: string | null; vendedor: string | null; codCrc?: string | null; crcNome?: string | null;
   } | null>(null);
   // Ref always pointing to the latest value — used in callbacks to avoid stale closures
   const pendingRouletteResultRef = useRef(pendingRouletteResult);
@@ -73,6 +93,24 @@ export default function GamePage() {
     queryFn: () => getBalloons(actionId!),
     enabled: !!actionId,
   });
+
+  const { data: usuariosData, isLoading: usuariosLoading } = useQuery({
+    queryKey: ["usuarios", selectedUnidade],
+    queryFn: () => getUsuarios(selectedUnidade),
+    enabled: isUserSearchOpen && !!selectedUnidade,
+  });
+
+  // Sync dtInicio with campaign creation date
+  useEffect(() => {
+    if (action?.created_at) {
+      // created_at comes in ISO format from SQLite, or simple date string
+      const safeDateStr = action.created_at.replace(' ', 'T');
+      const d = new Date(safeDateStr);
+      if (!isNaN(d.getTime())) {
+        setDtInicio(d.toLocaleDateString('pt-BR'));
+      }
+    }
+  }, [action?.created_at]);
 
   const validateMutation = useMutation({
     mutationFn: () => {
@@ -94,7 +132,14 @@ export default function GamePage() {
   });
 
   const popMutation = useMutation({
-    mutationFn: (id: string) => popBalloon(id, budgetValidation?.codOrcamento, budgetValidation?.vendedor, budgetValidation?.cliente),
+    mutationFn: (id: string) => {
+      if (validationType === 'crc') {
+        const balloon = balloonsData?.balloons.find((b: any) => b.id === id);
+        const vendedorCrc = crcValidation?.crcNome ? `${crcValidation.crcNome} (CRC)` : `CRC #${codCrc}`;
+        return popBalloon(id, undefined, vendedorCrc, "Resgate de Créditos", 'crc', codCrc, balloon?.nivel);
+      }
+      return popBalloon(id, budgetValidation?.codOrcamento, budgetValidation?.vendedor, budgetValidation?.cliente);
+    },
     onSuccess: (data) => {
       const b = data.balloon;
 
@@ -118,13 +163,23 @@ export default function GamePage() {
           valor: Number(b.valor),
           codOrcamento: budgetValidation?.codOrcamento || null,
           vendedor: budgetValidation?.vendedor || null,
+          codCrc: validationType === 'crc' ? codCrc : null,
+          crcNome: validationType === 'crc' ? crcValidation?.crcNome : null,
         });
         return;
       }
 
       // Non-roulette: identical original behaviour
       if (b.premiado) confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
-      setPoppedResult({ show: true, premiado: b.premiado, valor: Number(b.valor), codOrcamento: budgetValidation?.codOrcamento || null, vendedor: budgetValidation?.vendedor || null });
+      setPoppedResult({ 
+        show: true, 
+        premiado: b.premiado, 
+        valor: Number(b.valor), 
+        codOrcamento: budgetValidation?.codOrcamento || null, 
+        vendedor: budgetValidation?.vendedor || null,
+        codCrc: validationType === 'crc' ? codCrc : null,
+        crcNome: validationType === 'crc' ? crcValidation?.crcNome : null,
+      });
       queryClient.invalidateQueries({ queryKey: ["balloons", actionId] });
       setTimeout(() => {
         setPoppedResult((p) => {
@@ -138,17 +193,47 @@ export default function GamePage() {
     },
   });
 
+  const validateCrcMutation = useMutation({
+    mutationFn: () => validateCrc(codCrc, dtInicio, dtFim, selectedUnidade),
+    onSuccess: (data) => {
+      setCrcValidation(data);
+      if (data.indicacoesDisponiveis >= data.qtd_indicacoes_simples && data.indicacoesDisponiveis > 0) {
+        toast.success(`CRC validado! Você tem ${data.indicacoesDisponiveis} indicações disponíveis.`);
+      } else {
+        toast.error(`CRC validado, mas não há saldo de indicações suficientes.`);
+      }
+    },
+    onError: (err: Error) => {
+      setCrcValidation(null);
+      toast.error(err.message);
+    },
+  });
+
   const handleValidate = (e: React.FormEvent) => {
     e.preventDefault();
-    const hasValidCode = codOrcamentos.some(c => c.trim() !== "");
-    if (!hasValidCode || !selectedUnidade) return;
-    validateMutation.mutate();
+    if (validationType === 'orcamento') {
+      const hasValidCode = codOrcamentos.some(c => c.trim() !== "");
+      if (!hasValidCode || !selectedUnidade) return;
+      validateMutation.mutate();
+    } else {
+      if (!codCrc || !dtInicio || !dtFim || !selectedUnidade) return;
+      validateCrcMutation.mutate();
+    }
   };
 
   const handleReset = () => {
     setCodOrcamentos([""]);
+    setCodCrc("");
+    if (action?.created_at) {
+      const safeDateStr = action.created_at.replace(' ', 'T');
+      const d = new Date(safeDateStr);
+      if (!isNaN(d.getTime())) setDtInicio(d.toLocaleDateString('pt-BR'));
+    }
+    const d = new Date();
+    setDtFim(new Date(d.getFullYear(), d.getMonth() + 1, 0).toLocaleDateString('pt-BR'));
     setSelectedUnidade("");
     setBudgetValidation(null);
+    setCrcValidation(null);
     setRouletteActiveBalloonId(null);
   };
 
@@ -211,11 +296,53 @@ export default function GamePage() {
 
   const allBalloons = balloonsData?.balloons || [];
   const unidades = action?.unidades || [];
-  const canPop = budgetValidation?.approved === true;
   
-  const balloons = canPop && budgetValidation?.nivelPermitido
-    ? allBalloons.filter((b: any) => b.nivel === budgetValidation.nivelPermitido)
+  const canPop = (validationType === 'orcamento' && budgetValidation?.approved === true) || 
+                 (validationType === 'crc' && crcValidation !== null && crcValidation.indicacoesDisponiveis >= crcValidation.qtd_indicacoes_simples && crcValidation.indicacoesDisponiveis > 0);
+  
+  let nivelPermitido: 'simples' | 'premium' | null = null;
+  if (validationType === 'orcamento') {
+    nivelPermitido = budgetValidation?.nivelPermitido || 'simples';
+  } else if (validationType === 'crc' && crcValidation) {
+    if (crcValidation.indicacoesDisponiveis >= crcValidation.qtd_indicacoes_premium && crcValidation.qtd_indicacoes_premium > 0) {
+      nivelPermitido = 'premium';
+    } else if (crcValidation.indicacoesDisponiveis >= crcValidation.qtd_indicacoes_simples) {
+      nivelPermitido = 'simples';
+    }
+  }
+
+  const balloons = canPop && nivelPermitido
+    ? (validationType === 'crc' 
+        ? allBalloons.filter((b: any) => {
+            if (b.nivel === 'premium') {
+              return crcValidation!.indicacoesDisponiveis >= crcValidation!.qtd_indicacoes_premium && crcValidation!.qtd_indicacoes_premium > 0;
+            }
+            return true;
+          })
+        : allBalloons.filter((b: any) => b.nivel === nivelPermitido))
     : allBalloons.filter((b: any) => b.nivel === 'simples' || !b.nivel); // Fallback for old records without nivel
+
+  const handlePop = (balloonId: string) => {
+    const balloon = allBalloons.find((b: any) => b.id === balloonId);
+    if (!balloon) return;
+    
+    if (validationType === 'crc' && crcValidation) {
+      if (balloon.nivel === 'premium' && crcValidation.indicacoesDisponiveis < crcValidation.qtd_indicacoes_premium) {
+        toast.error(`Você precisa de ${crcValidation.qtd_indicacoes_premium} indicações para estourar o balão Premium. (Seu saldo: ${crcValidation.indicacoesDisponiveis})`);
+        return;
+      }
+      if (balloon.nivel === 'simples' && crcValidation.indicacoesDisponiveis < crcValidation.qtd_indicacoes_simples) {
+        toast.error(`Você precisa de ${crcValidation.qtd_indicacoes_simples} indicações para estourar o balão Simples. (Seu saldo: ${crcValidation.indicacoesDisponiveis})`);
+        return;
+      }
+    }
+
+    if (isRoulette && !rouletteActiveBalloonId && balloon) {
+      setRouletteActiveBalloonId(balloon.id);
+    }
+
+    popMutation.mutate(balloonId);
+  };
 
   // For roulette: pin the active ballot by ID so the wheel isn't replaced
   // mid-animation when the query re-renders.
@@ -279,14 +406,31 @@ export default function GamePage() {
             )}
             <DialogTitle className="font-display flex items-center gap-2 text-2xl pt-2">
               <PartyPopper className="h-6 w-6 text-primary" />
-              Validar Orçamento
+              Validar Participação
             </DialogTitle>
             <DialogDescription>
-              Acesso bloqueado. Informe a unidade e o código do orçamento aprovado para participar.
+              Acesso bloqueado. Informe a unidade e os dados necessários para participar.
             </DialogDescription>
           </DialogHeader>
 
-          <form onSubmit={handleValidate} className="space-y-4 py-4">
+          <div className="flex bg-muted p-1 rounded-lg mb-4 mt-2">
+            <button 
+              type="button" 
+              onClick={() => { setValidationType('orcamento'); handleReset(); }}
+              className={`flex-1 py-1.5 text-sm font-medium rounded-md transition-colors ${validationType === 'orcamento' ? 'bg-background shadow text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+            >
+              Orçamento
+            </button>
+            <button 
+              type="button"
+              onClick={() => { setValidationType('crc'); handleReset(); }}
+              className={`flex-1 py-1.5 text-sm font-medium rounded-md transition-colors ${validationType === 'crc' ? 'bg-background shadow text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+            >
+              Indicações (CRC)
+            </button>
+          </div>
+
+          <form onSubmit={handleValidate} className="space-y-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">Unidade</label>
               <Select value={selectedUnidade} onValueChange={setSelectedUnidade}>
@@ -300,107 +444,200 @@ export default function GamePage() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Códigos dos Orçamentos</label>
-              {codOrcamentos.map((cod, index) => (
-                <div key={index} className="flex gap-2 mb-2">
-                  <Input
-                    placeholder="Ex: 123456"
-                    value={cod}
-                    onChange={(e) => {
-                      const newCods = [...codOrcamentos];
-                      newCods[index] = e.target.value;
-                      setCodOrcamentos(newCods);
-                    }}
-                    className="text-lg font-display w-full"
-                    disabled={validateMutation.isPending}
-                  />
-                  {codOrcamentos.length > 1 && (
+
+            {validationType === 'orcamento' && (
+              <>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Códigos dos Orçamentos</label>
+                  {codOrcamentos.map((cod, index) => (
+                    <div key={index} className="flex gap-2 mb-2">
+                      <Input
+                        placeholder="Ex: 123456"
+                        value={cod}
+                        onChange={(e) => {
+                          const newCods = [...codOrcamentos];
+                          newCods[index] = e.target.value;
+                          setCodOrcamentos(newCods);
+                        }}
+                        className="text-lg font-display w-full"
+                        disabled={validateMutation.isPending}
+                      />
+                      {codOrcamentos.length > 1 && (
+                        <Button 
+                          type="button" 
+                          variant="outline" 
+                          onClick={() => {
+                            const newCods = codOrcamentos.filter((_, i) => i !== index);
+                            setCodOrcamentos(newCods);
+                          }}
+                          className="shrink-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+                        >
+                          -
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                  <div className="flex gap-2">
                     <Button 
                       type="button" 
                       variant="outline" 
-                      onClick={() => {
-                        const newCods = codOrcamentos.filter((_, i) => i !== index);
-                        setCodOrcamentos(newCods);
-                      }}
-                      className="shrink-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+                      onClick={() => setCodOrcamentos([...codOrcamentos, ""])}
+                      className="w-full sm:w-auto"
                     >
-                      -
+                      + Adicionar Orçamento
                     </Button>
-                  )}
+                    <Button 
+                      type="submit" 
+                      disabled={validateMutation.isPending || codOrcamentos.every(c => c.trim() === "") || !selectedUnidade} 
+                      className="w-full sm:w-auto ml-auto"
+                    >
+                      {validateMutation.isPending ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Search className="h-4 w-4" />
+                      )}
+                      <span className="ml-2">Buscar</span>
+                    </Button>
+                  </div>
                 </div>
-              ))}
-              <div className="flex gap-2">
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  onClick={() => setCodOrcamentos([...codOrcamentos, ""])}
-                  className="w-full sm:w-auto"
-                >
-                  + Adicionar Orçamento
-                </Button>
-                <Button 
-                  type="submit" 
-                  disabled={validateMutation.isPending || codOrcamentos.every(c => c.trim() === "") || !selectedUnidade} 
-                  className="w-full sm:w-auto ml-auto"
-                >
-                  {validateMutation.isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Search className="h-4 w-4" />
-                  )}
-                  <span className="ml-2">Buscar</span>
-                </Button>
-              </div>
-            </div>
 
-            {budgetValidation && !budgetValidation.approved && (
-              <div className="mt-4 rounded-lg border border-destructive/30 bg-destructive/5 p-4 flex flex-col gap-3">
-                <div className="flex items-center gap-2 text-destructive">
-                  <XCircle className="h-5 w-5 shrink-0" />
-                  <p className="font-bold">Validação Falhou</p>
+                {budgetValidation && !budgetValidation.approved && (
+                  <div className="mt-4 rounded-lg border border-destructive/30 bg-destructive/5 p-4 flex flex-col gap-3">
+                    <div className="flex items-center gap-2 text-destructive">
+                      <XCircle className="h-5 w-5 shrink-0" />
+                      <p className="font-bold">Validação Falhou</p>
+                    </div>
+                    
+                    <div className="flex flex-col gap-2 text-sm text-destructive pl-7">
+                      <div className="flex items-center justify-between border-b border-destructive/20 pb-1">
+                        <span>Orçamento Aprovado:</span>
+                        <strong className={budgetValidation.isPlanoAprovado ? "text-emerald-500" : "text-destructive"}>
+                          {budgetValidation.isPlanoAprovado ? "Sim" : "Não"}
+                        </strong>
+                      </div>
+                      
+                      {budgetValidation.vendaMinima !== undefined && budgetValidation.vendaMinima > 0 && (
+                        <div className="flex items-center justify-between border-b border-destructive/20 pb-1">
+                          <span>Valor Mínimo Atingido:</span>
+                          <strong className={budgetValidation.isMinVendaMet ? "text-emerald-500" : "text-destructive"}>
+                            {budgetValidation.isMinVendaMet ? "Sim" : "Não"}
+                          </strong>
+                        </div>
+                      )}
+
+                      <div className="mt-2 text-xs opacity-90 space-y-1">
+                        {budgetValidation.statusPlano === "Orçamento já utilizado." ? (
+                          <p>✨ Este orçamento já utilizou seu limite de {gameConfig.itemNamePlural} (1).</p>
+                        ) : (
+                          <>
+                            {!budgetValidation.isPlanoAprovado && (
+                              <p>📌 Status do sistema: {budgetValidation.statusPlano}</p>
+                            )}
+                            {!budgetValidation.isMinVendaMet && budgetValidation.msgVenda && (
+                              <p>📌 {budgetValidation.msgVenda}</p>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+
+            {validationType === 'crc' && (
+              <>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-medium">Código do CRC</label>
+                    <Button 
+                      type="button" 
+                      variant="link" 
+                      className="h-auto p-0 text-xs h-4" 
+                      onClick={() => {
+                        if (!selectedUnidade) {
+                           toast.error("Selecione a unidade primeiro para buscar o CRC.");
+                           return;
+                        }
+                        setIsUserSearchOpen(true);
+                      }}
+                    >
+                      Buscar meu código
+                    </Button>
+                  </div>
+                  <Input
+                    placeholder="Ex: 87200"
+                    value={codCrc}
+                    onChange={(e) => setCodCrc(e.target.value)}
+                    className="text-lg font-display w-full"
+                    disabled={validateCrcMutation.isPending}
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Data Inicial</label>
+                    <div className="relative">
+                      <Input
+                        placeholder="DD/MM/YYYY"
+                        value={dtInicio}
+                        disabled={true}
+                        onChange={() => {}}
+                        className="bg-muted text-muted-foreground"
+                      />
+                      <Calendar className="absolute right-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Data Final</label>
+                    <div className="relative">
+                      <Input
+                        placeholder="DD/MM/YYYY"
+                        value={dtFim}
+                        onChange={(e) => setDtFim(e.target.value)}
+                        disabled={validateCrcMutation.isPending}
+                      />
+                      <Calendar className="absolute right-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                    </div>
+                  </div>
                 </div>
                 
-                <div className="flex flex-col gap-2 text-sm text-destructive pl-7">
-                  <div className="flex items-center justify-between border-b border-destructive/20 pb-1">
-                    <span>Orçamento Aprovado:</span>
-                    <strong className={budgetValidation.isPlanoAprovado ? "text-emerald-500" : "text-destructive"}>
-                      {budgetValidation.isPlanoAprovado ? "Sim" : "Não"}
-                    </strong>
-                  </div>
-                  
-                  {budgetValidation.vendaMinima !== undefined && budgetValidation.vendaMinima > 0 && (
-                    <div className="flex items-center justify-between border-b border-destructive/20 pb-1">
-                      <span>Valor Mínimo Atingido:</span>
-                      <strong className={budgetValidation.isMinVendaMet ? "text-emerald-500" : "text-destructive"}>
-                        {budgetValidation.isMinVendaMet ? "Sim" : "Não"}
-                      </strong>
-                    </div>
-                  )}
-
-                  <div className="mt-2 text-xs opacity-90 space-y-1">
-                    {budgetValidation.statusPlano === "Orçamento já utilizado." ? (
-                      <p>✨ Este orçamento já utilizou seu limite de {gameConfig.itemNamePlural} (1).</p>
+                <div className="flex justify-end pt-2">
+                  <Button 
+                    type="submit" 
+                    disabled={validateCrcMutation.isPending || !codCrc || !dtInicio || !dtFim || !selectedUnidade} 
+                    className="w-full sm:w-auto"
+                  >
+                    {validateCrcMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
-                      <>
-                        {!budgetValidation.isPlanoAprovado && (
-                          <p>📌 Status do sistema: {budgetValidation.statusPlano}</p>
-                        )}
-                        {!budgetValidation.isMinVendaMet && budgetValidation.msgVenda && (
-                          <p>📌 {budgetValidation.msgVenda}</p>
-                        )}
-                      </>
+                      <Search className="h-4 w-4" />
                     )}
-                  </div>
+                    <span className="ml-2">Consultar Indicações</span>
+                  </Button>
                 </div>
-              </div>
+
+                {crcValidation && crcValidation.indicacoesDisponiveis < crcValidation.qtd_indicacoes_simples && (
+                  <div className="mt-4 rounded-lg border border-destructive/30 bg-destructive/5 p-4 flex flex-col gap-2">
+                    <div className="flex items-center gap-2 text-destructive">
+                      <XCircle className="h-5 w-5 shrink-0" />
+                      <p className="font-bold">Sem Saldo Suficiente</p>
+                    </div>
+                    <p className="text-sm text-destructive pl-7">
+                      {crcValidation.indicacoesDisponiveis > 0 
+                        ? `Você tem ${crcValidation.indicacoesDisponiveis} indicações, mas precisa de pelo menos ${crcValidation.qtd_indicacoes_simples} para estourar um balão.`
+                        : `Foram encontradas ${crcValidation.totalIndicacoes} indicações neste período, mas todas já foram gastas.`}
+                    </p>
+                  </div>
+                )}
+              </>
             )}
+
           </form>
         </DialogContent>
       </Dialog>
 
       <div className="mx-auto max-w-xl px-6 pt-6">
-        {canPop && (
+        {canPop && validationType === 'orcamento' && budgetValidation && (
           <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 mb-6 shadow-sm">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
               <div className="flex items-center gap-3 w-full">
@@ -436,6 +673,43 @@ export default function GamePage() {
             </div>
           </div>
         )}
+
+        {canPop && validationType === 'crc' && crcValidation && (
+          <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-4 mb-6 shadow-sm">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3 w-full">
+                <div className="bg-emerald-500/10 p-2 rounded-full">
+                  <CheckCircle className="h-6 w-6 text-emerald-600" />
+                </div>
+                <div>
+                  <p className="font-display font-bold text-foreground">
+                    {crcValidation.crcNome ? `${crcValidation.crcNome} (#${codCrc})` : `CRC #${codCrc}`}
+                  </p>
+                  <div className="flex flex-col gap-1 mt-1">
+                    <p className="text-sm text-muted-foreground font-medium">
+                      Saldo: <span className="text-emerald-600 font-bold">{crcValidation.indicacoesDisponiveis} Indicações</span>
+                    </p>
+                    {nivelPermitido && (
+                      <span className={`text-xs w-max px-2 py-0.5 rounded-full font-bold ${
+                        nivelPermitido === 'premium' 
+                          ? 'bg-amber-500/20 text-amber-600 border border-amber-500/30' 
+                          : 'bg-primary/20 text-primary border border-primary/30'
+                      }`}>
+                        Libera: Balão {nivelPermitido === 'premium' ? 'Simples e Premium' : 'Simples'}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    ({crcValidation.totalIndicacoes} no período, {crcValidation.indicacoesGastas} já gastas)
+                  </p>
+                </div>
+              </div>
+              <Button variant="outline" size="sm" onClick={handleReset} className="w-full sm:w-auto">
+                <XCircle className="h-4 w-4 mr-1" /> Sair
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
 
       <main className={`p-6 ${isRoulette ? 'flex flex-col items-center justify-center min-h-[calc(100vh-200px)]' : 'mx-auto max-w-6xl'}`}>
@@ -454,13 +728,7 @@ export default function GamePage() {
                 key="roulette-wheel"
                 balloon={activeBalloon}
                 index={0}
-                onPop={() => {
-                  // Pin the ballot ID before mutating so the wheel stays mounted
-                  if (!rouletteActiveBalloonId && activeBalloon) {
-                    setRouletteActiveBalloonId(activeBalloon.id);
-                  }
-                  popMutation.mutate(activeBalloon.id);
-                }}
+                onPop={() => handlePop(activeBalloon.id)}
                 isPopping={popMutation.isPending}
                 gameType={gameType}
                 totalRemaining={totalRemaining}
@@ -491,7 +759,7 @@ export default function GamePage() {
                   key={balloon.id}
                   balloon={balloon}
                   index={i}
-                  onPop={() => popMutation.mutate(balloon.id)}
+                  onPop={() => handlePop(balloon.id)}
                   isPopping={popMutation.isPending}
                   gameType={gameType}
                 />
@@ -535,7 +803,14 @@ export default function GamePage() {
                       <p className="text-xs text-muted-foreground">Vendedor: {poppedResult.vendedor}</p>
                     </div>
                   )}
-                  <p className="font-display text-4xl font-bold text-primary">R$ {poppedResult.valor.toFixed(2)}</p>
+                  {poppedResult.codCrc && (
+                    <div className="flex flex-col items-center gap-1 mb-4">
+                      <p className="text-sm text-muted-foreground font-bold border border-border inline-block px-4 py-1 rounded-full bg-muted/50">
+                        {poppedResult.crcNome ? `${poppedResult.crcNome} (#${poppedResult.codCrc})` : `CRC #${poppedResult.codCrc}`}
+                      </p>
+                    </div>
+                  )}
+                  <p className="font-display text-4xl font-bold text-primary">R$ {poppedResult.valor?.toFixed(2)}</p>
                 </>
               ) : (
                 <>
@@ -549,13 +824,67 @@ export default function GamePage() {
                       <p className="text-xs text-muted-foreground">Vendedor: {poppedResult.vendedor}</p>
                     </div>
                   )}
+                  {poppedResult.codCrc && (
+                    <div className="flex flex-col items-center gap-1 mb-4">
+                      <p className="text-sm text-muted-foreground font-bold border border-border inline-block px-4 py-1 rounded-full bg-muted/50">
+                        {poppedResult.crcNome ? `${poppedResult.crcNome} (#${poppedResult.codCrc})` : `CRC #${poppedResult.codCrc}`}
+                      </p>
+                    </div>
+                  )}
                   <p className="text-muted-foreground">Tente outro {gameConfig.itemName} 😊</p>
                 </>
               )}
             </motion.div>
           </motion.div>
         )}
-      </AnimatePresence>
+        </AnimatePresence>
+
+      {/* User Search Dialog */}
+      <Dialog open={isUserSearchOpen} onOpenChange={setIsUserSearchOpen}>
+        <DialogContent className="w-[95vw] sm:max-w-md rounded-xl md:w-full">
+          <DialogHeader>
+            <DialogTitle className="font-display text-xl">Buscar Usuário</DialogTitle>
+            <DialogDescription>
+              Encontre seu código na lista abaixo.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="max-h-[400px] overflow-y-auto flex flex-col gap-3 pr-2">
+              {usuariosLoading ? (
+                <div className="flex items-center justify-center p-4">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : usuariosData?.usuarios?.length ? (
+                  usuariosData.usuarios.map((u: any) => {
+                    const nome = u.nom_usuario || u.nome || u.Nome || u.nomeUsuario || "Sem Nome";
+                    const cod = u.cod_usuario || u.CodUsuario || u.id || u.codigo || "???";
+                    
+                    return (
+                    <Button
+                      key={cod}
+                      type="button"
+                      variant="outline"
+                      className="w-full justify-start text-left h-auto py-3 px-4 rounded-xl border border-border/60 hover:bg-muted/50 hover:border-primary/30 transition-all"
+                      onClick={() => {
+                        setCodCrc(String(cod));
+                        setIsUserSearchOpen(false);
+                      }}
+                    >
+                      <div className="flex flex-col items-start gap-1">
+                        <span className="font-bold">{nome}</span>
+                        <span className="text-xs text-muted-foreground">Código: {cod}</span>
+                      </div>
+                    </Button>
+                  )})
+              ) : (
+                <p className="text-sm text-muted-foreground text-center py-4">
+                  Nenhum usuário carregado.
+                </p>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
