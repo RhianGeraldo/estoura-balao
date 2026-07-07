@@ -95,6 +95,13 @@ async function fetchApi(path: string, method: "GET" | "POST" | "DELETE" | "PUT" 
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
 
+  if (res.status === 401) {
+    localStorage.removeItem("adminToken");
+    if (window.location.pathname !== "/login") {
+      window.location.href = "/login";
+    }
+  }
+
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || "API error");
   return data;
