@@ -388,10 +388,24 @@ app.post('/api/create-action', authMiddleware, async (req, res) => {
 // PUT /actions/:id (Update name and restricted units)
 app.put('/api/actions/:id', authMiddleware, async (req, res) => {
     const { id } = req.params;
-    const { nome, unidades, qtd_indicacoes_simples, qtd_indicacoes_premium } = req.body;
+    const { 
+        nome, 
+        unidades, 
+        qtd_indicacoes_simples, 
+        qtd_indicacoes_premium,
+        venda_minima,
+        venda_minima_premium,
+        desconto_max_premium,
+        formas_pagamento_premium
+    } = req.body;
 
     if (!nome) {
         return res.status(400).json({ error: 'Nome não informado' });
+    }
+
+    let formasPagamentoStr = formas_pagamento_premium;
+    if (Array.isArray(formas_pagamento_premium)) {
+        formasPagamentoStr = JSON.stringify(formas_pagamento_premium);
     }
 
     try {
@@ -399,8 +413,25 @@ app.put('/api/actions/:id', authMiddleware, async (req, res) => {
         if (!action) return res.status(404).json({ error: 'Ação não encontrada' });
 
         await db.run(
-            "UPDATE actions SET nome = ?, qtd_indicacoes_simples = COALESCE(?, qtd_indicacoes_simples), qtd_indicacoes_premium = COALESCE(?, qtd_indicacoes_premium) WHERE id = ?", 
-            [nome, qtd_indicacoes_simples, qtd_indicacoes_premium, id]
+            `UPDATE actions SET 
+                nome = ?, 
+                qtd_indicacoes_simples = COALESCE(?, qtd_indicacoes_simples), 
+                qtd_indicacoes_premium = COALESCE(?, qtd_indicacoes_premium),
+                venda_minima = COALESCE(?, venda_minima),
+                venda_minima_premium = COALESCE(?, venda_minima_premium),
+                desconto_max_premium = COALESCE(?, desconto_max_premium),
+                formas_pagamento_premium = COALESCE(?, formas_pagamento_premium)
+            WHERE id = ?`, 
+            [
+                nome, 
+                qtd_indicacoes_simples, 
+                qtd_indicacoes_premium,
+                venda_minima,
+                venda_minima_premium,
+                desconto_max_premium,
+                formasPagamentoStr,
+                id
+            ]
         );
 
         await db.run("DELETE FROM action_unidades WHERE action_id = ?", [id]);

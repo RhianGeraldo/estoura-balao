@@ -244,10 +244,17 @@ export default function AdminPage() {
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
-                          <Button variant="outline" size="sm" onClick={() => setEditingAction({ 
-                            ...action, 
-                            unidades: action.unidades?.map((u: any) => u.id) || [] 
-                          })}>
+                          <Button variant="outline" size="sm" onClick={() => {
+                            let parsedFormas = action.formas_pagamento_premium;
+                            if (typeof parsedFormas === 'string') {
+                              try { parsedFormas = JSON.parse(parsedFormas); } catch(e) { parsedFormas = []; }
+                            }
+                            setEditingAction({ 
+                              ...action, 
+                              formas_pagamento_premium: Array.isArray(parsedFormas) ? parsedFormas : [],
+                              unidades: action.unidades?.map((u: any) => u.id) || [] 
+                            });
+                          }}>
                             <Edit className="mr-2 h-4 w-4" /> Editar
                           </Button>
                           <Button variant="destructive" size="sm" onClick={() => closeMutation.mutate(action.id)} disabled={closeMutation.isPending}>
@@ -309,7 +316,19 @@ export default function AdminPage() {
                     {editingAction && (
                       <form onSubmit={(e) => {
                         e.preventDefault();
-                        updateMutation.mutate({ id: editingAction.id, payload: { nome: editingAction.nome, unidades: editingAction.unidades || [] } });
+                        updateMutation.mutate({ 
+                          id: editingAction.id, 
+                          payload: { 
+                            nome: editingAction.nome, 
+                            unidades: editingAction.unidades || [],
+                            venda_minima: editingAction.venda_minima,
+                            venda_minima_premium: editingAction.venda_minima_premium,
+                            desconto_max_premium: editingAction.desconto_max_premium,
+                            formas_pagamento_premium: editingAction.formas_pagamento_premium,
+                            qtd_indicacoes_simples: editingAction.qtd_indicacoes_simples,
+                            qtd_indicacoes_premium: editingAction.qtd_indicacoes_premium
+                          } 
+                        });
                       }} className="space-y-4 py-4">
                         <div className="space-y-2">
                           <Label htmlFor="edit-nome">Nome da Ação</Label>
@@ -361,8 +380,84 @@ export default function AdminPage() {
                             <Input value={editingAction.valor_maximo} disabled className="bg-muted/50" />
                           </div>
                           <div className="space-y-1">
-                            <Label className="text-muted-foreground">Venda Mínima p/ Estourar (R$)</Label>
-                            <Input value={editingAction.venda_minima} disabled className="bg-muted/50" />
+                            <Label className="text-muted-foreground font-bold text-primary">Venda Mín. p/ Estourar (R$)</Label>
+                            <Input 
+                              type="number" 
+                              value={editingAction.venda_minima} 
+                              onChange={(e) => setEditingAction({ ...editingAction, venda_minima: Number(e.target.value) })}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Additional Rules - Editable */}
+                        <div className="p-4 rounded-lg border-2 mt-6 bg-muted/20 space-y-4">
+                          <h4 className="font-display font-medium text-lg">Regras Adicionais (Editáveis)</h4>
+                          
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div className="space-y-1">
+                              <Label>Indicações Simples (CRC)</Label>
+                              <Input 
+                                type="number" 
+                                value={editingAction.qtd_indicacoes_simples || 0} 
+                                onChange={(e) => setEditingAction({ ...editingAction, qtd_indicacoes_simples: Number(e.target.value) })}
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <Label>Indicações Premium (CRC)</Label>
+                              <Input 
+                                type="number" 
+                                value={editingAction.qtd_indicacoes_premium || 0} 
+                                onChange={(e) => setEditingAction({ ...editingAction, qtd_indicacoes_premium: Number(e.target.value) })}
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <Label>Venda Mínima Premium (R$)</Label>
+                              <Input 
+                                type="number" 
+                                value={editingAction.venda_minima_premium || 0} 
+                                onChange={(e) => setEditingAction({ ...editingAction, venda_minima_premium: Number(e.target.value) })}
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <Label>Desconto Max. Premium (%)</Label>
+                              <Input 
+                                type="number" 
+                                value={editingAction.desconto_max_premium || 0} 
+                                onChange={(e) => setEditingAction({ ...editingAction, desconto_max_premium: Number(e.target.value) })}
+                              />
+                            </div>
+                          </div>
+                          
+                          <div className="space-y-2 mt-4">
+                            <Label>Métodos de Pagamento Permitidos (Premium)</Label>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                              {["PIX", "Dinheiro", "Cartão de Crédito", "Cartão de Débito", "Cartão Recorrente"].map((method) => {
+                                const val = method.toLowerCase();
+                                const selectedMethods = editingAction.formas_pagamento_premium || [];
+                                const isSelected = selectedMethods.includes(val);
+                                return (
+                                  <div
+                                    key={`edit-${val}`}
+                                    onClick={() => {
+                                      const newMethods = isSelected
+                                        ? selectedMethods.filter((m) => m !== val)
+                                        : [...selectedMethods, val];
+                                      setEditingAction({ ...editingAction, formas_pagamento_premium: newMethods });
+                                    }}
+                                    className={`flex items-center gap-2 p-2 border rounded-md cursor-pointer transition-colors text-sm ${
+                                      isSelected ? 'bg-primary/10 border-primary' : 'hover:bg-muted'
+                                    }`}
+                                  >
+                                    <div className={`w-4 h-4 rounded-sm border flex items-center justify-center ${
+                                      isSelected ? 'bg-primary border-primary' : 'border-input'
+                                    }`}>
+                                      {isSelected && <CheckCircle className="w-3 h-3 text-primary-foreground" />}
+                                    </div>
+                                    {method}
+                                  </div>
+                                );
+                              })}
+                            </div>
                           </div>
                         </div>
 
