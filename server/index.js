@@ -958,7 +958,8 @@ app.post('/api/validate-crc', async (req, res) => {
             return res.status(500).json({ error: "Erro de rede ao validar clientes" });
         }
 
-        const usage = await db.get("SELECT indicacoes_gastas FROM crc_usage WHERE action_id = ? AND crc_codigo = ?", [action.id, String(cod_crc)]);
+        const cleanCodCrc = String(cod_crc).trim();
+        const usage = await db.get("SELECT indicacoes_gastas FROM crc_usage WHERE action_id = ? AND crc_codigo = ?", [action.id, cleanCodCrc]);
         const indicacoesGastas = usage ? usage.indicacoes_gastas : 0;
         const indicacoesDisponiveis = totalIndicacoes - indicacoesGastas;
 
@@ -1005,11 +1006,12 @@ app.post('/api/pop-balloon', async (req, res) => {
             const action = await db.get("SELECT * FROM actions WHERE id = ?", [balloon.action_id]);
             const custo = nivel_balao === 'premium' ? action.qtd_indicacoes_premium : action.qtd_indicacoes_simples;
             
-            const usage = await db.get("SELECT indicacoes_gastas FROM crc_usage WHERE action_id = ? AND crc_codigo = ?", [balloon.action_id, String(cod_crc)]);
+            const cleanCodCrc = String(cod_crc).trim();
+            const usage = await db.get("SELECT indicacoes_gastas FROM crc_usage WHERE action_id = ? AND crc_codigo = ?", [balloon.action_id, cleanCodCrc]);
             if (usage) {
-                await db.run("UPDATE crc_usage SET indicacoes_gastas = indicacoes_gastas + ? WHERE action_id = ? AND crc_codigo = ?", [custo, balloon.action_id, String(cod_crc)]);
+                await db.run("UPDATE crc_usage SET indicacoes_gastas = indicacoes_gastas + ? WHERE action_id = ? AND crc_codigo = ?", [custo, balloon.action_id, cleanCodCrc]);
             } else {
-                await db.run("INSERT INTO crc_usage (action_id, crc_codigo, indicacoes_gastas) VALUES (?, ?, ?)", [balloon.action_id, String(cod_crc), custo]);
+                await db.run("INSERT INTO crc_usage (action_id, crc_codigo, indicacoes_gastas) VALUES (?, ?, ?)", [balloon.action_id, cleanCodCrc, custo]);
             }
         }
 
