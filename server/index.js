@@ -798,7 +798,12 @@ app.post('/api/validate-budget', async (req, res) => {
             discountPct = ((totalPrecoOriginal - totalValorBruto) / totalPrecoOriginal) * 100;
         }
 
-        const action = await db.get("SELECT venda_minima, venda_minima_premium, desconto_max_premium, qtd_baloes_premium, formas_pagamento_premium FROM actions WHERE status = 'active' ORDER BY created_at DESC LIMIT 1");
+        let action = null;
+        if (req.body.action_id) {
+            action = await db.get("SELECT venda_minima, venda_minima_premium, desconto_max_premium, qtd_baloes_premium, formas_pagamento_premium FROM actions WHERE id = ?", [req.body.action_id]);
+        } else {
+            action = await db.get("SELECT venda_minima, venda_minima_premium, desconto_max_premium, qtd_baloes_premium, formas_pagamento_premium FROM actions WHERE status = 'active' ORDER BY created_at DESC LIMIT 1");
+        }
         
         let nivelPermitido = null;
         if (action) {
@@ -910,16 +915,16 @@ app.get('/api/usuarios', async (req, res) => {
 app.post('/api/validate-crc', async (req, res) => {
     try {
         console.log("=== /api/validate-crc RECEIVED ===", req.body);
-        const { cod_crc, dt_inicio, dt_fim, unidade_id } = req.body;
-        if (!cod_crc || !dt_inicio || !dt_fim || !unidade_id) {
+        const { cod_crc, dt_inicio, dt_fim, unidade_id, action_id } = req.body;
+        if (!cod_crc || !dt_inicio || !dt_fim || !unidade_id || !action_id) {
             return res.status(400).json({ error: "Faltam parâmetros obrigatórios" });
         }
 
         const unidade = await db.get("SELECT token FROM unidades WHERE id = ?", [unidade_id]);
         if (!unidade) return res.status(404).json({ error: "Unidade não encontrada" });
 
-        const action = await db.get("SELECT id, qtd_indicacoes_simples, qtd_indicacoes_premium FROM actions WHERE status = 'active' ORDER BY created_at DESC LIMIT 1");
-        if (!action) return res.status(404).json({ error: "Nenhuma campanha ativa encontrada" });
+        const action = await db.get("SELECT id, qtd_indicacoes_simples, qtd_indicacoes_premium FROM actions WHERE id = ?", [action_id]);
+        if (!action) return res.status(404).json({ error: "Campanha não encontrada" });
 
         let totalIndicacoes = 0;
         let crcNome = "";

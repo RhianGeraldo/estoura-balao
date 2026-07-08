@@ -139,7 +139,7 @@ export async function deleteUnidade(id: string) {
   return fetchApi(`unidades?id=${id}`, "DELETE");
 }
 
-export async function validateBudget(codOrcamentos: string[], unidadeId: string): Promise<{
+export async function validateBudget(codOrcamentos: string[], unidadeId: string, actionId?: string): Promise<{
   approved: boolean;
   statusPlano: string;
   cliente: string;
@@ -153,10 +153,10 @@ export async function validateBudget(codOrcamentos: string[], unidadeId: string)
   nivelPermitido?: 'simples' | 'premium' | null;
   discountPct?: number;
 }> {
-  return fetchApi("validate-budget", "POST", { cod_orcamentos: codOrcamentos, unidade_id: unidadeId });
+  return fetchApi("validate-budget", "POST", { cod_orcamentos: codOrcamentos, unidade_id: unidadeId, action_id: actionId });
 }
 
-export async function validateCrc(codCrc: string, dtInicio: string, dtFim: string, unidadeId: string): Promise<{
+export async function validateCrc(codCrc: string, dtInicio: string, dtFim: string, unidadeId: string, actionId: string): Promise<{
   approved: boolean;
   totalIndicacoes: number;
   indicacoesGastas: number;
@@ -165,7 +165,7 @@ export async function validateCrc(codCrc: string, dtInicio: string, dtFim: strin
   qtd_indicacoes_simples: number;
   qtd_indicacoes_premium: number;
 }> {
-  return fetchApi("validate-crc", "POST", { cod_crc: codCrc, dt_inicio: dtInicio, dt_fim: dtFim, unidade_id: unidadeId });
+  return fetchApi("validate-crc", "POST", { cod_crc: codCrc, dt_inicio: dtInicio, dt_fim: dtFim, unidade_id: unidadeId, action_id: actionId });
 }
 
 export async function getUsuarios(unidadeId: string): Promise<{ usuarios: { cod_usuario: string; nome: string }[] }> {

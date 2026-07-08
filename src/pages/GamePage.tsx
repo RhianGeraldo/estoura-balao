@@ -115,7 +115,8 @@ export default function GamePage() {
   const validateMutation = useMutation({
     mutationFn: () => {
       const filtered = codOrcamentos.map(c => c.trim()).filter(c => c !== "");
-      return validateBudget(filtered, selectedUnidade);
+      if (filtered.length === 0) throw new Error("Informe pelo menos um código válido.");
+      return validateBudget(filtered, selectedUnidade, action?.id || "");
     },
     onSuccess: (data) => {
       setBudgetValidation(data);
@@ -194,7 +195,7 @@ export default function GamePage() {
   });
 
   const validateCrcMutation = useMutation({
-    mutationFn: () => validateCrc(codCrc, dtInicio, dtFim, selectedUnidade),
+    mutationFn: () => validateCrc(codCrc, dtInicio, dtFim, selectedUnidade, action?.id || ""),
     onSuccess: (data) => {
       setCrcValidation(data);
       if (data.indicacoesDisponiveis >= data.qtd_indicacoes_simples && data.indicacoesDisponiveis > 0) {
