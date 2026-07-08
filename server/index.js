@@ -984,9 +984,10 @@ app.post('/api/pop-balloon', async (req, res) => {
     try {
         const { balloon_id, user_id, cod_orcamento, vendedor, cliente, tipo_estouro, cod_crc, nivel_balao } = req.body;
         
+        const cleanCodCrc = cod_crc ? String(cod_crc).trim() : '';
         let poppedUserId = null;
         if (tipo_estouro === 'crc') {
-            poppedUserId = `CRC_${cod_crc}_${new Date().getTime()}`;
+            poppedUserId = `CRC_${cleanCodCrc}_${new Date().getTime()}`;
         } else {
             poppedUserId = cod_orcamento || user_id || null;
         }
@@ -1006,7 +1007,6 @@ app.post('/api/pop-balloon', async (req, res) => {
             const action = await db.get("SELECT * FROM actions WHERE id = ?", [balloon.action_id]);
             const custo = nivel_balao === 'premium' ? action.qtd_indicacoes_premium : action.qtd_indicacoes_simples;
             
-            const cleanCodCrc = String(cod_crc).trim();
             const usage = await db.get("SELECT indicacoes_gastas FROM crc_usage WHERE action_id = ? AND crc_codigo = ?", [balloon.action_id, cleanCodCrc]);
             if (usage) {
                 await db.run("UPDATE crc_usage SET indicacoes_gastas = indicacoes_gastas + ? WHERE action_id = ? AND crc_codigo = ?", [custo, balloon.action_id, cleanCodCrc]);
