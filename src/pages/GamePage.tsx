@@ -24,6 +24,7 @@ interface BudgetValidation {
   vendaMinima?: number;
   msgVenda?: string;
   nivelPermitido?: 'simples' | 'premium' | null;
+  isFallbackSimples?: boolean;
   discountPct?: number;
 }
 
@@ -48,6 +49,7 @@ export default function GamePage() {
     indicacoesDisponiveis: number;
     qtd_indicacoes_simples: number;
     qtd_indicacoes_premium: number;
+    crcNome?: string;
   } | null>(null);
 
   const [isUserSearchOpen, setIsUserSearchOpen] = useState(false);
@@ -123,6 +125,9 @@ export default function GamePage() {
       if (!data.approved) {
         toast.error(`Orçamento com status "${data.statusPlano}". Apenas orçamentos aprovados podem ${gameConfig.actionVerb.toLowerCase()} ${gameConfig.itemNamePlural}.`);
       } else {
+        if (data.isFallbackSimples) {
+          toast.info("Os balões Premium desta campanha se esgotaram! Você foi redirecionado para jogar nos balões Simples.", { duration: 6000 });
+        }
         toast.success(`Orçamento aprovado! Vendedor: ${data.vendedor}`);
       }
     },
@@ -199,6 +204,9 @@ export default function GamePage() {
     onSuccess: (data) => {
       setCrcValidation(data);
       if (data.indicacoesDisponiveis >= data.qtd_indicacoes_simples && data.indicacoesDisponiveis > 0) {
+        if (data.indicacoesDisponiveis >= data.qtd_indicacoes_premium && data.qtd_indicacoes_premium > 0 && unpoppedPremiumCount === 0 && unpoppedSimplesCount > 0) {
+          toast.info("Os balões Premium desta campanha se esgotaram! Você foi redirecionado para jogar nos balões Simples.", { duration: 6000 });
+        }
         toast.success(`CRC validado! Você tem ${data.indicacoesDisponiveis} indicações disponíveis.`);
       } else {
         toast.error(`CRC validado, mas não há saldo de indicações suficientes.`);
@@ -301,6 +309,9 @@ export default function GamePage() {
   const canPop = (validationType === 'orcamento' && budgetValidation?.approved === true) || 
                  (validationType === 'crc' && crcValidation !== null && crcValidation.indicacoesDisponiveis >= crcValidation.qtd_indicacoes_simples && crcValidation.indicacoesDisponiveis > 0);
   
+  const unpoppedPremiumCount = allBalloons.filter((b: any) => b.nivel === 'premium' && !b.estourado).length;
+  const unpoppedSimplesCount = allBalloons.filter((b: any) => (b.nivel === 'simples' || !b.nivel) && !b.estourado).length;
+
   let nivelPermitido: 'simples' | 'premium' | null = null;
   if (validationType === 'orcamento') {
     nivelPermitido = budgetValidation?.nivelPermitido || 'simples';
@@ -312,15 +323,20 @@ export default function GamePage() {
     }
   }
 
+  // Fallback automático para simples se não houver mais balões premium não estourados disponíveis
+  if (nivelPermitido === 'premium' && unpoppedPremiumCount === 0 && unpoppedSimplesCount > 0) {
+    nivelPermitido = 'simples';
+  }
+
   const balloons = canPop && nivelPermitido
     ? (validationType === 'crc' 
         ? allBalloons.filter((b: any) => {
-            if (b.nivel === 'premium') {
+            if (b.nivel === 'premium' && unpoppedPremiumCount > 0) {
               return crcValidation!.indicacoesDisponiveis >= crcValidation!.qtd_indicacoes_premium && crcValidation!.qtd_indicacoes_premium > 0;
             }
-            return true;
+            return b.nivel === 'simples' || !b.nivel;
           })
-        : allBalloons.filter((b: any) => b.nivel === nivelPermitido))
+        : allBalloons.filter((b: any) => b.nivel === nivelPermitido || (!b.nivel && nivelPermitido === 'simples')))
     : allBalloons.filter((b: any) => b.nivel === 'simples' || !b.nivel); // Fallback for old records without nivel
 
   const handlePop = (balloonId: string) => {
@@ -654,12 +670,15 @@ export default function GamePage() {
                       Vendedor: <span className="font-medium text-foreground">{budgetValidation.vendedor}</span>
                     </p>
                     {budgetValidation.nivelPermitido && (
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${
-                        budgetValidation.nivelPermitido === 'premium' 
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-bold inline-flex items-center gap-1 ${
+                        budgetValidation.nivelPermitido === 'premium' && !budgetValidation.isFallbackSimples
                           ? 'bg-amber-500/20 text-amber-600 border border-amber-500/30' 
                           : 'bg-primary/20 text-primary border border-primary/30'
                       }`}>
-                        Nível: {budgetValidation.nivelPermitido === 'premium' ? 'Premium' : 'Simples'}
+                        Nível: {budgetValidation.nivelPermitido === 'premium' && !budgetValidation.isFallbackSimples ? 'Premium' : 'Simples'}
+                        {budgetValidation.isFallbackSimples && (
+                          <span className="text-[10px] opacity-80 font-normal">(Premium Esgotado)</span>
+                        )}
                       </span>
                     )}
                   </div>

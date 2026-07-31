@@ -800,12 +800,13 @@ app.post('/api/validate-budget', async (req, res) => {
 
         let action = null;
         if (req.body.action_id) {
-            action = await db.get("SELECT venda_minima, venda_minima_premium, desconto_max_premium, qtd_baloes_premium, formas_pagamento_premium FROM actions WHERE id = ?", [req.body.action_id]);
+            action = await db.get("SELECT id, venda_minima, venda_minima_premium, desconto_max_premium, qtd_baloes_premium, formas_pagamento_premium FROM actions WHERE id = ?", [req.body.action_id]);
         } else {
-            action = await db.get("SELECT venda_minima, venda_minima_premium, desconto_max_premium, qtd_baloes_premium, formas_pagamento_premium FROM actions WHERE status = 'active' ORDER BY created_at DESC LIMIT 1");
+            action = await db.get("SELECT id, venda_minima, venda_minima_premium, desconto_max_premium, qtd_baloes_premium, formas_pagamento_premium FROM actions WHERE status = 'active' ORDER BY created_at DESC LIMIT 1");
         }
         
         let nivelPermitido = null;
+        let isFallbackSimples = false;
         if (action) {
             minVenda = Number(action.venda_minima || 0);
             if (totalValorBruto < minVenda) {
@@ -853,6 +854,17 @@ app.post('/api/validate-budget', async (req, res) => {
                             console.error("Erro ao fazer parse de formas_pagamento_premium", e);
                         }
                     }
+
+                    if (nivelPermitido === "premium" && action.id) {
+                        const unpoppedPremium = await db.get(
+                            "SELECT COUNT(*) as count FROM balloons WHERE action_id = ? AND nivel = 'premium' AND estourado = 0",
+                            [action.id]
+                        );
+                        if (!unpoppedPremium || Number(unpoppedPremium.count) === 0) {
+                            nivelPermitido = "simples";
+                            isFallbackSimples = true;
+                        }
+                    }
                 } else {
                     nivelPermitido = "simples";
                 }
@@ -875,6 +887,7 @@ app.post('/api/validate-budget', async (req, res) => {
             vendedor: comumVendedor,
             codOrcamento: combinedCodOrcamentoStr,
             nivelPermitido: nivelPermitido,
+            isFallbackSimples: isFallbackSimples,
             discountPct: discountPct
         });
     } catch (err) {
@@ -1010,7 +1023,8 @@ app.post('/api/pop-balloon', async (req, res) => {
 
         if (tipo_estouro === 'crc') {
             const action = await db.get("SELECT * FROM actions WHERE id = ?", [balloon.action_id]);
-            const custo = nivel_balao === 'premium' ? action.qtd_indicacoes_premium : action.qtd_indicacoes_simples;
+            const isPremiumBalloon = balloon.nivel === 'premium';
+            const custo = isPremiumBalloon ? (action.qtd_indicacoes_premium || 0) : (action.qtd_indicacoes_simples || 0);
             
             const usage = await db.get("SELECT indicacoes_gastas FROM crc_usage WHERE action_id = ? AND crc_codigo = ?", [balloon.action_id, cleanCodCrc]);
             if (usage) {

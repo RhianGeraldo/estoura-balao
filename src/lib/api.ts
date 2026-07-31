@@ -151,6 +151,7 @@ export async function validateBudget(codOrcamentos: string[], unidadeId: string,
   vendaMinima?: number;
   msgVenda?: string;
   nivelPermitido?: 'simples' | 'premium' | null;
+  isFallbackSimples?: boolean;
   discountPct?: number;
 }> {
   return fetchApi("validate-budget", "POST", { cod_orcamentos: codOrcamentos, unidade_id: unidadeId, action_id: actionId });
